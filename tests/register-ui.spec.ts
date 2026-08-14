@@ -89,7 +89,7 @@ test.describe("Register Page", () => {
 
     // Get initial band IDs via API
     const beforeRes = await page.request.get("/api/bands");
-    const beforeIds = new Set((await beforeRes.json()).map(b => b.id));
+    const beforeIds = new Set(((await beforeRes.json()) as { id: string }[]).map(b => b.id));
 
     // Open Add Profile modal
     await page.getByRole("button", { name: "Add Profile" }).click();
@@ -115,10 +115,10 @@ test.describe("Register Page", () => {
 
     // Verify the new band exists via API
     const afterRes = await page.request.get("/api/bands");
-    const afterBands = await afterRes.json();
+    const afterBands = (await afterRes.json()) as { id: string; name: string }[];
     const createdBand = afterBands.find(b => !beforeIds.has(b.id));
     expect(createdBand).toBeTruthy();
-    expect(createdBand.name).toBe(uniqueName);
+    expect(createdBand!.name).toBe(uniqueName);
 
     // Find the row by unique name and click delete
     const profilesTable = page.locator("table").nth(1);
@@ -132,25 +132,22 @@ test.describe("Register Page", () => {
     await page.waitForTimeout(1500);
 
     // Verify the band was deleted
-    const finalBands = await (await page.request.get("/api/bands")).json();
-    expect(finalBands.find(b => b.id === createdBand.id)).toBeFalsy();
+    const finalBands = (await (await page.request.get("/api/bands")).json()) as { id: string }[];
+    expect(finalBands.find(b => b.id === createdBand!.id)).toBeFalsy();
   });
 
   test("R6: Create and delete a user (full cycle)", async ({ page }) => {
     // Need at least one band for the user form
     const bandsRes = await page.request.get("/api/bands");
     const bands = await bandsRes.json();
-    if (bands.length === 0) {
-      test.skip("No bands available — cannot create user without band selection");
-      return;
-    }
+    test.skip(bands.length === 0, "No bands available — cannot create user without band selection");
 
     const ts = Date.now();
     const uniqueEmail = `testuser-${ts}@test.com`;
 
     // Get initial user IDs via API
     const beforeRes = await page.request.get("/api/users");
-    const beforeIds = new Set((await beforeRes.json()).map(u => u.id));
+    const beforeIds = new Set(((await beforeRes.json()) as { id: string }[]).map(u => u.id));
 
     // Open Add User modal
     await page.getByRole("button", { name: "Add User" }).click();
@@ -177,10 +174,10 @@ test.describe("Register Page", () => {
 
     // Verify the new user exists via API
     const afterRes = await page.request.get("/api/users");
-    const afterUsers = await afterRes.json();
+    const afterUsers = (await afterRes.json()) as { id: string; email: string }[];
     const createdUser = afterUsers.find(u => !beforeIds.has(u.id));
     expect(createdUser).toBeTruthy();
-    expect(createdUser.email).toBe(uniqueEmail);
+    expect(createdUser!.email).toBe(uniqueEmail);
 
     // Find the row by email and click delete
     const usersTable = page.locator("table").first();
@@ -194,7 +191,7 @@ test.describe("Register Page", () => {
     await page.waitForTimeout(1500);
 
     // Verify the user was deleted
-    const finalUsers = await (await page.request.get("/api/users")).json();
-    expect(finalUsers.find(u => u.id === createdUser.id)).toBeFalsy();
+    const finalUsers = (await (await page.request.get("/api/users")).json()) as { id: string }[];
+    expect(finalUsers.find(u => u.id === createdUser!.id)).toBeFalsy();
   });
 });
