@@ -1,0 +1,16 @@
+{
+  "name": "rejoy-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-06-20",
+  "vars": {
+    "JWT_SECRET": "rejoy-dev-secret-change-me-in-production"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rejoy-db",
+      "database_id": "local-db-placeholder",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}
