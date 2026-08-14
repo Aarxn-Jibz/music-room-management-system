@@ -8,6 +8,13 @@
       "when": 1786729291229,
       "tag": "0000_large_harpoon",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786735625692,
+      "tag": "0001_regular_masque",
+      "breakpoints": true
     }
   ]
 }

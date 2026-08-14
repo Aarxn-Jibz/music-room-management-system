@@ -116,3 +116,11 @@ export const updateRequestSchema = z.object({
 });
 
 export type UpdateRequestInput = z.infer<typeof updateRequestSchema>;
+
+export const updateSystemSettingsSchema = z.object({
+  notification_email: z
+    .union([z.string().email('Must be a valid email address'), z.literal('')])
+    .optional(),
+});
+
+export type UpdateSystemSettingsInput = z.infer<typeof updateSystemSettingsSchema>;

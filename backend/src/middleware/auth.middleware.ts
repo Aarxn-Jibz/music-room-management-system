@@ -11,6 +11,10 @@ export interface AppEnv {
     DB: D1Database;
     JWT_SECRET: string;
     ENV?: string;
+    SMTP_HOST?: string;
+    SMTP_PORT?: string;
+    SMTP_USER?: string;
+    SMTP_PASSWORD?: string;
   };
   Variables: {
     user: User;

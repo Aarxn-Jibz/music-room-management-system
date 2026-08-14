@@ -4,11 +4,19 @@ import { getDb } from '../../db/client.js';
 import { RequestsService } from './requests.service.js';
 import { createRequestSchema, updateRequestSchema } from '../../schemas.js';
 import { requireAuth, AppEnv } from '../../middleware/auth.middleware.js';
+import { NotificationService } from '../../email/index.js';
+import { createWorkerTransport } from '../../email/transport.js';
 
 const requestRoutes = new Hono<AppEnv>();
 const requestAuthRoutes = new Hono<AppEnv>();
 
 requestAuthRoutes.use('*', requireAuth());
+
+function buildService(c: { env: AppEnv['Bindings'] }): RequestsService {
+  const db = getDb(c.env.DB);
+  const notifier = new NotificationService(db, c.env, createWorkerTransport);
+  return new RequestsService(db, notifier);
+}
 
 const listQuerySchema = z.object({
   room_id: z.string().optional(),
@@ -27,8 +35,7 @@ requestAuthRoutes.get('/', async (c) => {
     return c.json({ message: 'Forbidden: You can only view your own requests' }, 403);
   }
 
-  const db = getDb(c.env.DB);
-  const service = new RequestsService(db);
+  const service = buildService(c);
 
   try {
     const requests = await service.list({
@@ -50,8 +57,7 @@ requestAuthRoutes.post('/', async (c) => {
     return c.json({ message: 'Validation failed' }, 400);
   }
 
-  const db = getDb(c.env.DB);
-  const service = new RequestsService(db);
+  const service = buildService(c);
 
   try {
     const request = await service.create(actor, parseResult.data);
@@ -92,8 +98,7 @@ requestAuthRoutes.put('/', async (c) => {
     return c.json({ message: 'Validation failed' }, 400);
   }
 
-  const db = getDb(c.env.DB);
-  const service = new RequestsService(db);
+  const service = buildService(c);
 
   try {
     const request = await service.update(actor, id, parseResult.data, actor.role === 'ADMIN');
@@ -131,8 +136,7 @@ requestAuthRoutes.delete('/', async (c) => {
   }
 
   const actor = c.get('user');
-  const db = getDb(c.env.DB);
-  const service = new RequestsService(db);
+  const service = buildService(c);
 
   try {
     const result = await service.remove(actor, id);

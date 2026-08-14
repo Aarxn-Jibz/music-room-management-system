@@ -69,6 +69,7 @@ export const systemSettings = sqliteTable('system_settings', {
   defaultPolicyId: text('default_policy_id')
     .references(() => bookingPolicies.id)
     .notNull(),
+  notificationEmail: text('notification_email'),
 });
 
 export const rooms = sqliteTable(

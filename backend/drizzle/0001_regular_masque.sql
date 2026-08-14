@@ -1,0 +1,1 @@
+ALTER TABLE `system_settings` ADD `notification_email` text;

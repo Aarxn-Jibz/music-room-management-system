@@ -1,0 +1,15 @@
+# Copy this file to `.dev.vars` and fill in the values to enable booking
+# notification emails from `wrangler dev`. `.dev.vars` is gitignored.
+#
+# For Gmail use port 465 (implicit TLS). An app password is required:
+#   https://support.google.com/accounts/answer/185833
+#
+# For a local SMTP sink during development, point at it and use a plaintext port:
+#   SMTP_HOST=127.0.0.1
+#   SMTP_PORT=2525
+#   SMTP_USER=sender@local.test
+#   SMTP_PASSWORD=secret
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=
+SMTP_PASSWORD=

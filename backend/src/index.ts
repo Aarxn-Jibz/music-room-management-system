@@ -9,6 +9,7 @@ import { slotConfigRoutes } from './features/slotconfig/slotconfig.routes.js';
 import { slotRoutes } from './features/slots/slots.routes.js';
 import { requestRoutes } from './features/requests/requests.routes.js';
 import { entryLogRoutes } from './features/entrylogs/entrylogs.routes.js';
+import { settingsRoutes } from './features/settings/settings.routes.js';
 
 const app = new Hono<AppEnv>();
 
@@ -28,6 +29,7 @@ app.route('/api', slotConfigRoutes);
 app.route('/api', slotRoutes);
 app.route('/api', requestRoutes);
 app.route('/api', entryLogRoutes);
+app.route('/api', settingsRoutes);
 
 export default app;
 export type { AppEnv };

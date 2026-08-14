@@ -8,6 +8,7 @@ import { SlotPolicyService } from './slot-policy.service.js';
 import { writeAuditLog } from '../../audit/index.js';
 import { CreateRequestInput, UpdateRequestInput } from '../../schemas.js';
 import { User } from '../../db/repositories/users.repository.js';
+import { BookingNotifier, BookingNotificationEvent } from '../../email/index.js';
 
 export type RequestStatusApi = 'pending' | 'approved' | 'denied';
 
@@ -86,8 +87,32 @@ function toDTO(row: BookingRow): RequestDTO {
 export class RequestsService {
   private policyService: SlotPolicyService;
 
-  constructor(private db: DbClient) {
+  constructor(
+    private db: DbClient,
+    private notifier?: BookingNotifier,
+  ) {
     this.policyService = new SlotPolicyService(db);
+  }
+
+  private dispatchNotification(kind: BookingNotificationEvent['kind'], dto: RequestDTO): Promise<void> {
+    if (!this.notifier) {
+      return Promise.resolve();
+    }
+    return this.notifier
+      .notify({
+        kind,
+        booking: {
+          id: dto.id,
+          status: dto.status,
+          slot_start: dto.slot_start,
+          slot_end: dto.slot_end,
+          room_id: dto.room_id,
+          user_name: dto.user_name,
+          band_name: dto.band_name,
+          reason: dto.reason,
+        },
+      })
+      .catch(() => {});
   }
 
   async list(params: { roomId?: string; userId?: string }): Promise<RequestDTO[]> {
@@ -263,6 +288,7 @@ export class RequestsService {
     if (!created) {
       throw new Error('INTERNAL');
     }
+    await this.dispatchNotification('created', created);
     return created;
   }
 
@@ -413,6 +439,11 @@ export class RequestsService {
     const updated = await this.getById(id);
     if (!updated) {
       throw new Error('INTERNAL');
+    }
+    if (updated.status === 'approved') {
+      await this.dispatchNotification('approved', updated);
+    } else if (updated.status === 'denied') {
+      await this.dispatchNotification('denied', updated);
     }
     return updated;
   }

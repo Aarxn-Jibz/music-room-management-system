@@ -237,4 +237,28 @@ describe('RequestsService', () => {
     const logs = await db.select().from(schema.auditLogs);
     expect(logs.length).toBeGreaterThan(0);
   });
+
+  it('creates the booking even when the notification email fails', async () => {
+    const failingNotifier = {
+      notify: async () => {
+        throw new Error('smtp down');
+      },
+    };
+    const serviceWithNotifier = new RequestsService(db, failingNotifier);
+    const request = await serviceWithNotifier.create(member, createInput(monday10));
+    expect(request.status).toBe('pending');
+    expect(request.slot_start).toBe(new Date(monday10).toISOString());
+  });
+
+  it('approves the booking even when the notification email fails', async () => {
+    const failingNotifier = {
+      notify: async () => {
+        throw new Error('smtp down');
+      },
+    };
+    const serviceWithNotifier = new RequestsService(db, failingNotifier);
+    const request = await serviceWithNotifier.create(member, createInput(monday10));
+    const approved = await serviceWithNotifier.update(admin, request.id, { status: 'approved' }, true);
+    expect(approved.status).toBe('approved');
+  });
 });
