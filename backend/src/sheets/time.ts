@@ -27,11 +27,20 @@ export function formatWeekLabel(mondayMs: number): string {
   return `Week of ${d.getUTCFullYear()}-${month}-${day}`;
 }
 
+// Google Sheets tab names: unique, max 100 chars, must not contain these.
+export const TAB_NAME_MAX_LENGTH = 100;
+const FORBIDDEN_TAB_CHARS = /[:\\/?*[\]]/g;
+
 // Optional admin tab prefix keeps determinism: "<prefix> - Week of 2026-08-10".
+// The prefix is sanitized (forbidden chars stripped, leading/trailing quotes
+// removed) and clamped so the full tab name never exceeds 100 characters.
 export function formatTabName(prefix: string | null | undefined, mondayMs: number): string {
   const label = formatWeekLabel(mondayMs);
-  const trimmed = (prefix ?? '').trim();
-  return trimmed ? `${trimmed} - ${label}` : label;
+  const cleaned = (prefix ?? '').replace(FORBIDDEN_TAB_CHARS, '').replace(/^'+|'+$/g, '').trim();
+  if (!cleaned) return label;
+  const maxPrefix = Math.max(0, TAB_NAME_MAX_LENGTH - label.length - ' - '.length);
+  const clipped = Array.from(cleaned).slice(0, maxPrefix).join('');
+  return `${clipped} - ${label}`;
 }
 
 // Map a getUTCDay() value (0=Sun..6=Sat) to a week-grid index (0=Mon..6=Sun).

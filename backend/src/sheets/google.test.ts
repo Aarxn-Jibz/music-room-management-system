@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { a1Range, exchangeToken, quoteSheetName, updateSpreadsheet } from './google.js';
+import {
+  a1Range,
+  addSheet,
+  batchClear,
+  exchangeToken,
+  listSheetTitles,
+  quoteSheetName,
+  staleClearRanges,
+  updateSpreadsheet,
+} from './google.js';
 
 interface FetchCall {
   url: string;
@@ -97,5 +106,93 @@ describe('updateSpreadsheet', () => {
     await expect(
       updateSpreadsheet(fetcher, 'tok', { spreadsheetId: 's', tabName: 't', values: [['a']] }),
     ).rejects.toThrow('Google Sheets update failed: 403');
+  });
+});
+
+describe('listSheetTitles', () => {
+  it('returns the titles of every tab', async () => {
+    const { fetcher, calls } = recordingFetch(async (url, init) => {
+      expect(url).toContain('/spreadsheets/SPREADID?fields=sheets.properties.title');
+      expect(init?.method).toBeUndefined();
+      expect(init?.headers).toMatchObject({ Authorization: 'Bearer tok' });
+      return new Response(
+        JSON.stringify({
+          sheets: [
+            { properties: { title: 'Sheet1' } },
+            { properties: { title: 'Week of 2026-08-10' } },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const titles = await listSheetTitles(fetcher, 'SPREADID', 'tok');
+    expect(titles).toEqual(['Sheet1', 'Week of 2026-08-10']);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('throws when the metadata fetch fails', async () => {
+    const { fetcher } = recordingFetch(async () => new Response('nope', { status: 404 }));
+    await expect(listSheetTitles(fetcher, 'SPREADID', 'tok')).rejects.toThrow(
+      'Google Sheets metadata failed: 404',
+    );
+  });
+});
+
+describe('addSheet', () => {
+  it('creates a missing tab via batchUpdate', async () => {
+    const { fetcher, calls } = recordingFetch(async (url, init) => {
+      expect(url).toBe('https://sheets.googleapis.com/v4/spreadsheets/SPREADID:batchUpdate');
+      expect(init?.method).toBe('POST');
+      expect(init?.headers).toMatchObject({ Authorization: 'Bearer tok' });
+      const body = JSON.parse(String(init?.body));
+      expect(body).toEqual({
+        requests: [{ addSheet: { properties: { title: 'Week of 2026-08-10' } } }],
+      });
+      return new Response(JSON.stringify({ replies: [{ addSheet: {} }] }), { status: 200 });
+    });
+
+    await addSheet(fetcher, 'SPREADID', 'tok', 'Week of 2026-08-10');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('throws when Google rejects the tab creation', async () => {
+    const { fetcher } = recordingFetch(async () => new Response('conflict', { status: 409 }));
+    await expect(addSheet(fetcher, 'SPREADID', 'tok', 'x')).rejects.toThrow(
+      'Google Sheets tab creation failed: 409',
+    );
+  });
+});
+
+describe('staleClearRanges / batchClear', () => {
+  it('covers cells below and right of the current rectangle', () => {
+    expect(staleClearRanges('Week of 2026-08-10', 7, 3)).toEqual([
+      "'Week of 2026-08-10'!A8:ZZ99999",
+      "'Week of 2026-08-10'!D1:ZZ99999",
+    ]);
+  });
+
+  it('omits the column range when the grid already spans every column', () => {
+    expect(staleClearRanges('t', 1, 702)).toEqual(["'t'!A2:ZZ99999"]);
+  });
+
+  it('clears the stale ranges in a single batch call', async () => {
+    const ranges = staleClearRanges('Week of 2026-08-10', 7, 3);
+    const { fetcher, calls } = recordingFetch(async (url, init) => {
+      expect(url).toBe('https://sheets.googleapis.com/v4/spreadsheets/SPREADID/values:batchClear');
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body))).toEqual({ ranges });
+      return new Response(JSON.stringify({ clearedRanges: ranges }), { status: 200 });
+    });
+
+    await batchClear(fetcher, 'SPREADID', 'tok', ranges);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('throws when Google rejects the clear', async () => {
+    const { fetcher } = recordingFetch(async () => new Response('forbidden', { status: 403 }));
+    await expect(batchClear(fetcher, 'SPREADID', 'tok', ["'t'!A2:ZZ99999"])).rejects.toThrow(
+      'Google Sheets clear failed: 403',
+    );
   });
 });

@@ -4,7 +4,15 @@ import { writeAuditLog } from '../audit/index.js';
 import { buildWeeklyGrid, WeeklyGrid } from './grid.js';
 import { describeUtcInstant, formatTabName, weekMondayUtc } from './time.js';
 import { buildServiceAccountAssertion, GOOGLE_SHEETS_SCOPE, ServiceAccountCredentials } from './jwt.js';
-import { exchangeToken, Fetcher, updateSpreadsheet } from './google.js';
+import {
+  addSheet,
+  batchClear,
+  exchangeToken,
+  Fetcher,
+  listSheetTitles,
+  staleClearRanges,
+  updateSpreadsheet,
+} from './google.js';
 
 export type SheetJobStatus = 'ok' | 'skipped' | 'failed';
 
@@ -27,7 +35,9 @@ export interface SheetsEnv {
  * Weekly Google Sheets export of APPROVED bookings.
  * - Reads only (never creates/modifies/deletes bookings).
  * - Never throws: every path returns a result and is audit-logged.
- * - Idempotent: the same week always writes to the same tab via full-range overwrite.
+ * - Idempotent: the same week always writes to the same tab via full-range
+ *   overwrite. The tab is auto-created when missing, and cells left over from
+ *   larger grids are cleared after the write.
  */
 export class WeeklySheetService {
   constructor(
@@ -87,11 +97,23 @@ export class WeeklySheetService {
 
       const assertion = await buildServiceAccountAssertion(credentials, nowMs);
       const accessToken = await exchangeToken(this.fetchImpl, credentials.tokenUri, assertion);
+
+      const titles = await listSheetTitles(this.fetchImpl, spreadsheetId, accessToken);
+      if (!titles.includes(tabName)) {
+        await addSheet(this.fetchImpl, spreadsheetId, accessToken, tabName);
+      }
+
       await updateSpreadsheet(this.fetchImpl, accessToken, {
         spreadsheetId,
         tabName,
         values: [grid.header, ...grid.rows],
       });
+      await batchClear(
+        this.fetchImpl,
+        spreadsheetId,
+        accessToken,
+        staleClearRanges(tabName, grid.rows.length, grid.header.length),
+      );
 
       const bookings = grid.rows.reduce(
         (sum, row) => sum + row.slice(1).filter((cell) => cell !== '').length,

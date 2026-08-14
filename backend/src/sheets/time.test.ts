@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   MS_PER_DAY,
+  TAB_NAME_MAX_LENGTH,
   dayIndexWithinWeek,
   describeUtcInstant,
   formatTabName,
@@ -49,6 +50,26 @@ describe('formatWeekLabel / formatTabName', () => {
     expect(formatTabName('', monday)).toBe('Week of 2026-08-10');
     expect(formatTabName('ACM Studio', monday)).toBe('ACM Studio - Week of 2026-08-10');
     expect(formatTabName('  ACM Studio  ', monday)).toBe('ACM Studio - Week of 2026-08-10');
+  });
+
+  it('strips characters Google forbids in tab names', () => {
+    const monday = Date.UTC(2026, 7, 10);
+    expect(formatTabName('R&B [Live]', monday)).toBe('R&B Live - Week of 2026-08-10');
+    expect(formatTabName('Hall 1 / North', monday)).toBe('Hall 1  North - Week of 2026-08-10');
+    expect(formatTabName('A?B*C', monday)).toBe('ABC - Week of 2026-08-10');
+  });
+
+  it('keeps embedded quotes but strips leading/trailing ones', () => {
+    const monday = Date.UTC(2026, 7, 10);
+    expect(formatTabName("O'Brien", monday)).toBe("O'Brien - Week of 2026-08-10");
+    expect(formatTabName("'Studio'", monday)).toBe('Studio - Week of 2026-08-10');
+  });
+
+  it('clamps the total tab name to 100 characters', () => {
+    const monday = Date.UTC(2026, 7, 10);
+    const name = formatTabName('x'.repeat(80), monday);
+    expect(name.length).toBeLessThanOrEqual(TAB_NAME_MAX_LENGTH);
+    expect(name.endsWith('- Week of 2026-08-10')).toBe(true);
   });
 });
 

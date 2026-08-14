@@ -135,11 +135,14 @@ describe('WeeklySheetService', () => {
       .set({ sheetsSpreadsheetId: 'SPREADSHEET-123', sheetsSheetName: prefix });
   }
 
-  it('writes the weekly grid and records SHEETS_JOB_OK', async () => {
+  it('writes the weekly grid, creates the missing tab, clears stale cells, and records SHEETS_JOB_OK', async () => {
     await configureSpreadsheet();
     const { fetcher, calls } = recordingFetch(async (url, init) => {
       if (url.includes('oauth2.googleapis.com/token')) {
         return new Response(JSON.stringify({ access_token: 'tok-123' }), { status: 200 });
+      }
+      if (url.includes('fields=sheets.properties.title')) {
+        return new Response(JSON.stringify({ sheets: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ updatedCells: 1 }), { status: 200 });
     });
@@ -152,11 +155,15 @@ describe('WeeklySheetService', () => {
     expect(result.tabName).toBe('Test Venue - Week of 2026-08-10');
     expect(result.rows).toBe(7);
     expect(result.bookings).toBe(1);
-    expect(calls).toHaveLength(2);
+
+    // token -> tab list -> addSheet -> values.update -> batchClear
+    expect(calls).toHaveLength(5);
+    expect(calls.some((c) => c.url.includes(':batchUpdate'))).toBe(true);
+    expect(calls.some((c) => c.url.endsWith('/values:batchClear'))).toBe(true);
 
     // The grid cell for Main Room - Monday @ 09:00 carries the band name.
-    const update = calls[1].body as { values?: string[][] };
-    const grid = update.values!;
+    const update = calls.find((c) => c.init?.method === 'PUT')!;
+    const grid = (update.body as { values?: string[][] }).values!;
     expect(grid[0]).toEqual(['Room / Day', '09:00']);
     expect(grid.find((row) => row[0] === 'Main Room - Monday')?.[1]).toBe('University Choir');
 
@@ -167,6 +174,30 @@ describe('WeeklySheetService', () => {
 
     // Bookings are never modified by the job.
     expect(await countBookings()).toBe(before);
+  });
+
+  it('reuses an existing tab and still clears stale cells', async () => {
+    await configureSpreadsheet('');
+    const { fetcher, calls } = recordingFetch(async (url) => {
+      if (url.includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'tok' }), { status: 200 });
+      }
+      if (url.includes('fields=sheets.properties.title')) {
+        return new Response(
+          JSON.stringify({ sheets: [{ properties: { title: 'Week of 2026-08-10' } }] }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    const service = new WeeklySheetService(db, envWithCreds(), fetcher);
+    const result = await service.run(WEEK_MONDAY);
+
+    expect(result.status).toBe('ok');
+    expect(result.tabName).toBe('Week of 2026-08-10');
+    expect(calls.some((c) => c.url.includes(':batchUpdate'))).toBe(false);
+    expect(calls.some((c) => c.url.endsWith('/values:batchClear'))).toBe(true);
   });
 
   it('skips when no spreadsheet is configured and never calls Google', async () => {
