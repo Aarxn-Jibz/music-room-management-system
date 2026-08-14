@@ -3,7 +3,7 @@ import { desc } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
 import { schema } from '../../db/client.js';
 import { writeAuditLog } from '../../audit/index.js';
-import { AppEnv } from '../../middleware/auth.middleware.js';
+import { requireAuth, requireAdmin, AppEnv } from '../../middleware/auth.middleware.js';
 
 export interface EntryLogDTO {
   id: string;
@@ -39,8 +39,10 @@ function toEntryLogDTO(log: typeof schema.auditLogs.$inferSelect): EntryLogDTO {
 }
 
 const entryLogRoutes = new Hono<AppEnv>();
+const entryLogAdminRoutes = new Hono<AppEnv>();
+entryLogAdminRoutes.use('*', requireAuth(), requireAdmin());
 
-entryLogRoutes.get('/entrylogs', async (c) => {
+entryLogAdminRoutes.get('/entrylogs', async (c) => {
   const db = getDb(c.env.DB);
 
   try {
@@ -56,7 +58,7 @@ entryLogRoutes.get('/entrylogs', async (c) => {
   }
 });
 
-entryLogRoutes.post('/entrylogs', async (c) => {
+entryLogAdminRoutes.post('/entrylogs', async (c) => {
   const db = getDb(c.env.DB);
 
   try {
@@ -69,5 +71,7 @@ entryLogRoutes.post('/entrylogs', async (c) => {
     return c.json({ message: 'Error recording entry log' }, 500);
   }
 });
+
+entryLogRoutes.route('/entrylogs', entryLogAdminRoutes);
 
 export { entryLogRoutes };

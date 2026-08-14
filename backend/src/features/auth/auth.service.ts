@@ -2,7 +2,7 @@ import { signToken } from '../../lib/jwt.js';
 import { hashPassword, verifyPassword } from '../../lib/password.js';
 import { IAuthRepository } from './auth.repository.js';
 import { RegisterInput } from '../../schemas.js';
-import { toUserDTOWithPasswordFlag, UserDTOWithPasswordFlag, mapRoleFromApi } from '../../dto.js';
+import { toUserDTOWithPasswordFlag, UserDTOWithPasswordFlag } from '../../dto.js';
 import { User } from '../../db/repositories/users.repository.js';
 
 export interface LoginResult {
@@ -97,7 +97,7 @@ export class AuthService {
       email,
       name: input.name,
       passwordHash,
-      role: mapRoleFromApi(input.role ?? 'user'),
+      role: 'USER',
       mustChangePassword: false,
       active: true,
       createdAt: now,
