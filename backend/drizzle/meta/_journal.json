@@ -15,6 +15,13 @@
       "when": 1786735625692,
       "tag": "0001_regular_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786737586836,
+      "tag": "0002_woozy_ezekiel_stane",
+      "breakpoints": true
     }
   ]
 }

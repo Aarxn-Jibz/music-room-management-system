@@ -15,6 +15,8 @@ function toDTO(row: typeof schema.systemSettings.$inferSelect) {
     notification_email: row.notificationEmail ?? null,
     booking_release_day: row.bookingReleaseDay,
     booking_release_time: row.bookingReleaseTime,
+    sheets_spreadsheet_id: row.sheetsSpreadsheetId ?? null,
+    sheets_sheet_name: row.sheetsSheetName ?? null,
   };
 }
 
@@ -45,10 +47,23 @@ settingsAuthRoutes.put('/system-settings', async (c) => {
     if (!rows[0]) {
       return c.json({ message: 'System settings not found' }, 404);
     }
-    const email = parseResult.data.notification_email?.trim();
+    const data = parseResult.data;
+    const set: Record<string, unknown> = {};
+    if ('notification_email' in (body as object)) {
+      const email = data.notification_email?.trim();
+      set.notificationEmail = email ? email : null;
+    }
+    if ('sheets_spreadsheet_id' in (body as object)) {
+      const spreadsheetId = data.sheets_spreadsheet_id?.trim();
+      set.sheetsSpreadsheetId = spreadsheetId ? spreadsheetId : null;
+    }
+    if ('sheets_sheet_name' in (body as object)) {
+      const sheetName = data.sheets_sheet_name?.trim();
+      set.sheetsSheetName = sheetName ? sheetName : null;
+    }
     const updated = await db
       .update(schema.systemSettings)
-      .set({ notificationEmail: email ? email : null })
+      .set(set)
       .where(eq(schema.systemSettings.id, rows[0].id))
       .returning();
     return c.json(toDTO(updated[0]));

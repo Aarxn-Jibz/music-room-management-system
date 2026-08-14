@@ -6,6 +6,7 @@ import { useSession } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import DashboardTable from "@/components/ui/DashboardTable";
 import NotificationSettings from "@/components/ui/NotificationSettings";
+import WeeklySheetSettings from "@/components/ui/WeeklySheetSettings";
 import { MotionWrapper } from "@/components/ui/MotionWrapper";
 
 const Navbar = dynamic(() => import("@/components/Navbar"), {
@@ -35,6 +36,7 @@ export default function AdminDashboard() {
         <div className="w-full pt-20 max-w-4xl">
           <DashboardTable />
           <NotificationSettings />
+          <WeeklySheetSettings />
         </div>
       </main>
     </MotionWrapper>

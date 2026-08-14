@@ -70,6 +70,8 @@ export const systemSettings = sqliteTable('system_settings', {
     .references(() => bookingPolicies.id)
     .notNull(),
   notificationEmail: text('notification_email'),
+  sheetsSpreadsheetId: text('sheets_spreadsheet_id'),
+  sheetsSheetName: text('sheets_sheet_name'),
 });
 
 export const rooms = sqliteTable(

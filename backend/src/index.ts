@@ -10,6 +10,9 @@ import { slotRoutes } from './features/slots/slots.routes.js';
 import { requestRoutes } from './features/requests/requests.routes.js';
 import { entryLogRoutes } from './features/entrylogs/entrylogs.routes.js';
 import { settingsRoutes } from './features/settings/settings.routes.js';
+import { sheetsRoutes } from './features/sheets/sheets.routes.js';
+import { getDb } from './db/client.js';
+import { WeeklySheetService } from './sheets/service.js';
 
 const app = new Hono<AppEnv>();
 
@@ -30,6 +33,23 @@ app.route('/api', slotRoutes);
 app.route('/api', requestRoutes);
 app.route('/api', entryLogRoutes);
 app.route('/api', settingsRoutes);
+app.route('/api', sheetsRoutes);
 
-export default app;
+// Cloudflare ScheduledEvent: weekly Google Sheets export.
+// Cron "30 15 * * 0" = Sunday 15:30 UTC = Sunday 21:00 IST (UTC+5:30).
+export async function scheduled(
+  _event: ScheduledEvent,
+  env: AppEnv['Bindings'],
+  _ctx: ExecutionContext,
+): Promise<void> {
+  const db = getDb(env.DB);
+  const service = new WeeklySheetService(db, env);
+  const result = await service.run();
+  console.log(`[weekly-sheet] scheduled ${result.status}`, result);
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled,
+} as const;
 export type { AppEnv };

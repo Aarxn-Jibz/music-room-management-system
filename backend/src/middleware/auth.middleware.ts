@@ -15,6 +15,7 @@ export interface AppEnv {
     SMTP_PORT?: string;
     SMTP_USER?: string;
     SMTP_PASSWORD?: string;
+    GOOGLE_SERVICE_ACCOUNT?: string;
   };
   Variables: {
     user: User;

@@ -13,3 +13,9 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
 SMTP_USER=
 SMTP_PASSWORD=
+
+# Optional: Google service account JSON (full key file contents) used by the
+# weekly Google Sheets export. Enable by creating a service account and sharing
+# the target spreadsheet with its client_email. NOT needed for `wrangler dev`
+# or the local dry-run harness (jobs skip with a SHEETS_JOB_SKIPPED audit).
+GOOGLE_SERVICE_ACCOUNT=

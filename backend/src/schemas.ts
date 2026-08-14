@@ -121,6 +121,8 @@ export const updateSystemSettingsSchema = z.object({
   notification_email: z
     .union([z.string().email('Must be a valid email address'), z.literal('')])
     .optional(),
+  sheets_spreadsheet_id: z.string().max(200, 'Must be at most 200 characters').optional(),
+  sheets_sheet_name: z.string().max(80, 'Must be at most 80 characters').optional(),
 });
 
 export type UpdateSystemSettingsInput = z.infer<typeof updateSystemSettingsSchema>;

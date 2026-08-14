@@ -1,0 +1,154 @@
+import { schema } from '../db/client.js';
+import type { DbClient } from '../db/client.js';
+import { writeAuditLog } from '../audit/index.js';
+import { buildWeeklyGrid, WeeklyGrid } from './grid.js';
+import { describeUtcInstant, formatTabName, weekMondayUtc } from './time.js';
+import { buildServiceAccountAssertion, GOOGLE_SHEETS_SCOPE, ServiceAccountCredentials } from './jwt.js';
+import { exchangeToken, Fetcher, updateSpreadsheet } from './google.js';
+
+export type SheetJobStatus = 'ok' | 'skipped' | 'failed';
+
+export interface SheetJobResult {
+  status: SheetJobStatus;
+  weekMonday: number;
+  tabName: string | null;
+  rows?: number;
+  cols?: number;
+  bookings?: number;
+  reason?: string;
+  error?: string;
+}
+
+export interface SheetsEnv {
+  GOOGLE_SERVICE_ACCOUNT?: string;
+}
+
+/**
+ * Weekly Google Sheets export of APPROVED bookings.
+ * - Reads only (never creates/modifies/deletes bookings).
+ * - Never throws: every path returns a result and is audit-logged.
+ * - Idempotent: the same week always writes to the same tab via full-range overwrite.
+ */
+export class WeeklySheetService {
+  constructor(
+    private db: DbClient,
+    private env: SheetsEnv,
+    private fetchImpl: Fetcher = globalThis.fetch,
+  ) {}
+
+  preview(nowMs: number = Date.now()): Promise<WeeklyGrid> {
+    return buildWeeklyGrid(this.db, weekMondayUtc(nowMs));
+  }
+
+  private credentials(): ServiceAccountCredentials | null {
+    const raw = this.env.GOOGLE_SERVICE_ACCOUNT;
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as {
+        client_email?: string;
+        private_key?: string;
+        token_uri?: string;
+      };
+      if (!parsed.client_email || !parsed.private_key || !parsed.token_uri) return null;
+      return {
+        clientEmail: parsed.client_email,
+        privateKey: parsed.private_key,
+        tokenUri: parsed.token_uri,
+        scope: GOOGLE_SHEETS_SCOPE,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async settingsRow() {
+    const rows = await this.db.select().from(schema.systemSettings).limit(1);
+    return rows[0] ?? null;
+  }
+
+  async run(nowMs: number = Date.now()): Promise<SheetJobResult> {
+    const weekMonday = weekMondayUtc(nowMs);
+    const labels = describeUtcInstant(nowMs);
+
+    try {
+      const settings = await this.settingsRow();
+      const spreadsheetId = settings?.sheetsSpreadsheetId?.trim() || null;
+      if (!spreadsheetId) {
+        return this.skip(weekMonday, 'spreadsheet not configured', labels.utc);
+      }
+
+      const credentials = this.credentials();
+      if (!credentials) {
+        return this.skip(weekMonday, 'GOOGLE_SERVICE_ACCOUNT not configured', labels.utc);
+      }
+
+      const grid = await buildWeeklyGrid(this.db, weekMonday);
+      const tabName = formatTabName(settings?.sheetsSheetName, weekMonday);
+
+      const assertion = await buildServiceAccountAssertion(credentials, nowMs);
+      const accessToken = await exchangeToken(this.fetchImpl, credentials.tokenUri, assertion);
+      await updateSpreadsheet(this.fetchImpl, accessToken, {
+        spreadsheetId,
+        tabName,
+        values: [grid.header, ...grid.rows],
+      });
+
+      const bookings = grid.rows.reduce(
+        (sum, row) => sum + row.slice(1).filter((cell) => cell !== '').length,
+        0,
+      );
+      const result: SheetJobResult = {
+        status: 'ok',
+        weekMonday,
+        tabName,
+        rows: grid.rows.length,
+        cols: grid.header.length,
+        bookings,
+      };
+      await this.audit(
+        'SHEETS_JOB_OK',
+        result,
+        { utc: labels.utc, ist: labels.ist, spreadsheetId },
+      );
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const result: SheetJobResult = {
+        status: 'failed',
+        weekMonday,
+        tabName: formatTabName((await this.settingsRow())?.sheetsSheetName, weekMonday),
+        error: message,
+      };
+      await this.audit(
+        'SHEETS_JOB_FAILED',
+        result,
+        { utc: labels.utc, ist: labels.ist },
+      );
+      console.error('[weekly-sheet] job failed:', message);
+      return result;
+    }
+  }
+
+  private async skip(weekMonday: number, reason: string, utc: string): Promise<SheetJobResult> {
+    const result: SheetJobResult = {
+      status: 'skipped',
+      weekMonday,
+      tabName: null,
+      reason,
+    };
+    await this.audit('SHEETS_JOB_SKIPPED', result, { utc, reason });
+    return result;
+  }
+
+  private async audit(
+    action: string,
+    result: SheetJobResult,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    await writeAuditLog(this.db, null, action, 'WEEKLY_SHEET', result.tabName, {
+      ...metadata,
+      weekMonday: result.weekMonday,
+      status: result.status,
+    });
+  }
+}

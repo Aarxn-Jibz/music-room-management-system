@@ -5,6 +5,9 @@
   "vars": {
     "JWT_SECRET": "rejoy-dev-secret-change-me-in-production"
   },
+  "triggers": {
+    "crons": ["30 15 * * 0"]
+  },
   "d1_databases": [
     {
       "binding": "DB",

@@ -10,6 +10,7 @@
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:prod": "wrangler d1 migrations apply DB --remote",
     "db:seed": "tsx src/db/seed.js",
+    "sheets:dry-run": "tsx scripts/weekly-sheet-harness.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -134,4 +134,15 @@ test.describe("Dashboard Page", () => {
       await expect(page.getByText("Slot Configuration")).toBeVisible();
     }
   });
+
+  test("D7: Weekly Google Sheets settings card renders and skips export without credentials", async ({ page }) => {
+    await expect(page.getByText("Weekly Google Sheets Grid")).toBeVisible();
+    await expect(page.getByPlaceholder("Google Spreadsheet ID")).toBeVisible();
+    await expect(page.getByPlaceholder("Tab prefix (optional, e.g. ACM Studio)")).toBeVisible();
+
+    await page.getByRole("button", { name: "Run export now" }).click();
+    await expect(
+      page.getByText(/Skipped: (spreadsheet not configured|GOOGLE_SERVICE_ACCOUNT not configured)/),
+    ).toBeVisible({ timeout: 10000 });
+  });
 });
