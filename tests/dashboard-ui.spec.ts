@@ -42,7 +42,7 @@ test.describe("Dashboard Page", () => {
   test("D4: Add new slot config then delete it", async ({ page }) => {
     // Record current config IDs for reliable row identification
     const beforeRes = await page.request.get("/api/slotconfig");
-    const beforeIds = new Set((await beforeRes.json()).map(c => c.id));
+    const beforeIds = new Set(((await beforeRes.json()) as { id: string }[]).map(c => c.id));
 
     const tbody = page.locator("table tbody tr");
     const initialCount = await tbody.count();
@@ -64,12 +64,12 @@ test.describe("Dashboard Page", () => {
 
     // Find the newly created config's UUID via API
     const afterRes = await page.request.get("/api/slotconfig");
-    const afterConfigs = await afterRes.json();
+    const afterConfigs = (await afterRes.json()) as { id: string }[];
     const created = afterConfigs.find(c => !beforeIds.has(c.id));
     expect(created).toBeTruthy();
 
     // Locate the row by its UUID and click the delete button
-    const row = page.locator("tr").filter({ hasText: created.id });
+    const row = page.locator("tr").filter({ hasText: created!.id });
     const deleteBtn = row.locator("button.text-gray-400");
     await deleteBtn.click();
     await page.waitForTimeout(1500);
@@ -82,10 +82,7 @@ test.describe("Dashboard Page", () => {
     const tbody = page.locator("table tbody tr");
     const firstRow = tbody.first();
 
-    if (!(await firstRow.isVisible())) {
-      test.skip("No configs to toggle");
-      return;
-    }
+    test.skip(!(await firstRow.isVisible()), "No configs to toggle");
 
     // Read current status badge text
     const statusBadge = firstRow.locator("span.rounded-full");
@@ -110,10 +107,7 @@ test.describe("Dashboard Page", () => {
     const res = await page.request.get("/api/slotconfig");
     const allConfigs = await res.json();
 
-    if (allConfigs.length <= 7) {
-      test.skip("Less than 8 configs — pagination not shown");
-      return;
-    }
+    test.skip(allConfigs.length <= 7, "Less than 8 configs — pagination not shown");
 
     const pagination = page.locator("div.mt-6.gap-2");
     const buttons = pagination.locator("button");

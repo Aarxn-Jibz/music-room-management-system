@@ -79,10 +79,7 @@ test.describe("SlotRequests Page", () => {
 
   test("S5: Approve a pending request", async ({ page }) => {
     const pendingRow = page.locator("tr").filter({ hasText: /pending/ }).first();
-    if (!(await pendingRow.isVisible())) {
-      test.skip("No pending requests to approve");
-      return;
-    }
+    test.skip(!(await pendingRow.isVisible()), "No pending requests to approve");
 
     const approveBtn = pendingRow.locator("button.text-green-400").first();
     await expect(approveBtn).toBeVisible();
@@ -100,10 +97,7 @@ test.describe("SlotRequests Page", () => {
 
   test("S6: Deny a pending request", async ({ page }) => {
     const pendingRow = page.locator("tr").filter({ hasText: /pending/ }).first();
-    if (!(await pendingRow.isVisible())) {
-      test.skip("No pending requests to deny");
-      return;
-    }
+    test.skip(!(await pendingRow.isVisible()), "No pending requests to deny");
 
     const denyBtn = pendingRow.locator("button.text-red-400").first();
     await expect(denyBtn).toBeVisible();
@@ -121,10 +115,7 @@ test.describe("SlotRequests Page", () => {
 
   test("S7: Edit modal opens with form fields", async ({ page }) => {
     const anyRow = page.locator("tbody tr").first();
-    if (!(await anyRow.isVisible())) {
-      test.skip("No requests to edit");
-      return;
-    }
+    test.skip(!(await anyRow.isVisible()), "No requests to edit");
 
     const editBtn = anyRow.locator("button.text-blue-400").first();
     await expect(editBtn).toBeVisible();
@@ -146,10 +137,7 @@ test.describe("SlotRequests Page", () => {
 
   test("S8: Edit form changes status and saves", async ({ page }) => {
     const anyRow = page.locator("tbody tr").first();
-    if (!(await anyRow.isVisible())) {
-      test.skip("No requests to edit");
-      return;
-    }
+    test.skip(!(await anyRow.isVisible()), "No requests to edit");
 
     const editBtn = anyRow.locator("button.text-blue-400").first();
     await expect(editBtn).toBeVisible();
