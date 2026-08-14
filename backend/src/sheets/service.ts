@@ -38,6 +38,8 @@ export interface SheetsEnv {
  * - Idempotent: the same week always writes to the same tab via full-range
  *   overwrite. The tab is auto-created when missing, and cells left over from
  *   larger grids are cleared after the write.
+ * - The cron fires Sunday 15:30 UTC (21:00 IST); the exported week is the one
+ *   containing the run, i.e. the current/about-to-end week (product intent).
  */
 export class WeeklySheetService {
   constructor(
@@ -50,24 +52,34 @@ export class WeeklySheetService {
     return buildWeeklyGrid(this.db, weekMondayUtc(nowMs));
   }
 
-  private credentials(): ServiceAccountCredentials | null {
+  private credentials(): { credentials: ServiceAccountCredentials | null; reason: string } {
     const raw = this.env.GOOGLE_SERVICE_ACCOUNT;
-    if (!raw) return null;
+    if (!raw) {
+      return { credentials: null, reason: 'GOOGLE_SERVICE_ACCOUNT not configured' };
+    }
     try {
       const parsed = JSON.parse(raw) as {
         client_email?: string;
         private_key?: string;
         token_uri?: string;
       };
-      if (!parsed.client_email || !parsed.private_key || !parsed.token_uri) return null;
+      if (!parsed.client_email || !parsed.private_key || !parsed.token_uri) {
+        return {
+          credentials: null,
+          reason: 'GOOGLE_SERVICE_ACCOUNT invalid: missing client_email, private_key, or token_uri',
+        };
+      }
       return {
-        clientEmail: parsed.client_email,
-        privateKey: parsed.private_key,
-        tokenUri: parsed.token_uri,
-        scope: GOOGLE_SHEETS_SCOPE,
+        credentials: {
+          clientEmail: parsed.client_email,
+          privateKey: parsed.private_key,
+          tokenUri: parsed.token_uri,
+          scope: GOOGLE_SHEETS_SCOPE,
+        },
+        reason: '',
       };
     } catch {
-      return null;
+      return { credentials: null, reason: 'GOOGLE_SERVICE_ACCOUNT invalid: not valid JSON' };
     }
   }
 
@@ -79,6 +91,7 @@ export class WeeklySheetService {
   async run(nowMs: number = Date.now()): Promise<SheetJobResult> {
     const weekMonday = weekMondayUtc(nowMs);
     const labels = describeUtcInstant(nowMs);
+    let tabName: string | null = null;
 
     try {
       const settings = await this.settingsRow();
@@ -87,13 +100,13 @@ export class WeeklySheetService {
         return this.skip(weekMonday, 'spreadsheet not configured', labels.utc);
       }
 
-      const credentials = this.credentials();
+      const { credentials, reason } = this.credentials();
       if (!credentials) {
-        return this.skip(weekMonday, 'GOOGLE_SERVICE_ACCOUNT not configured', labels.utc);
+        return this.skip(weekMonday, reason, labels.utc);
       }
 
       const grid = await buildWeeklyGrid(this.db, weekMonday);
-      const tabName = formatTabName(settings?.sheetsSheetName, weekMonday);
+      tabName = formatTabName(settings?.sheetsSheetName, weekMonday);
 
       const assertion = await buildServiceAccountAssertion(credentials, nowMs);
       const accessToken = await exchangeToken(this.fetchImpl, credentials.tokenUri, assertion);
@@ -127,7 +140,7 @@ export class WeeklySheetService {
         cols: grid.header.length,
         bookings,
       };
-      await this.audit(
+      await this.safeAudit(
         'SHEETS_JOB_OK',
         result,
         { utc: labels.utc, ist: labels.ist, spreadsheetId },
@@ -138,14 +151,10 @@ export class WeeklySheetService {
       const result: SheetJobResult = {
         status: 'failed',
         weekMonday,
-        tabName: formatTabName((await this.settingsRow())?.sheetsSheetName, weekMonday),
+        tabName,
         error: message,
       };
-      await this.audit(
-        'SHEETS_JOB_FAILED',
-        result,
-        { utc: labels.utc, ist: labels.ist },
-      );
+      await this.safeAudit('SHEETS_JOB_FAILED', result, { utc: labels.utc, ist: labels.ist });
       console.error('[weekly-sheet] job failed:', message);
       return result;
     }
@@ -158,7 +167,7 @@ export class WeeklySheetService {
       tabName: null,
       reason,
     };
-    await this.audit('SHEETS_JOB_SKIPPED', result, { utc, reason });
+    await this.safeAudit('SHEETS_JOB_SKIPPED', result, { utc });
     return result;
   }
 
@@ -171,6 +180,22 @@ export class WeeklySheetService {
       ...metadata,
       weekMonday: result.weekMonday,
       status: result.status,
+      ...(result.reason ? { reason: result.reason } : {}),
+      ...(result.error ? { error: result.error } : {}),
     });
+  }
+
+  // Audit logging is best-effort: a DB failure while the job is running must
+  // not turn a non-throwing run into a thrown one.
+  private async safeAudit(
+    action: string,
+    result: SheetJobResult,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.audit(action, result, metadata);
+    } catch (err) {
+      console.error(`[weekly-sheet] audit ${action} failed:`, err);
+    }
   }
 }

@@ -225,7 +225,37 @@ describe('WeeklySheetService', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('reports failure, records SHEETS_JOB_FAILED, and never throws', async () => {
+  it('skips with a distinct reason when the service-account JSON is invalid', async () => {
+    await configureSpreadsheet();
+    const { fetcher, calls } = recordingFetch(async () => new Response('unexpected', { status: 500 }));
+    const service = new WeeklySheetService(db, { GOOGLE_SERVICE_ACCOUNT: '{not json' }, fetcher);
+
+    const result = await service.run(WEEK_MONDAY);
+
+    expect(result.status).toBe('skipped');
+    expect(result.reason).toBe('GOOGLE_SERVICE_ACCOUNT invalid: not valid JSON');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('skips with a distinct reason when required credential fields are missing', async () => {
+    await configureSpreadsheet();
+    const { fetcher, calls } = recordingFetch(async () => new Response('unexpected', { status: 500 }));
+    const service = new WeeklySheetService(
+      db,
+      { GOOGLE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'a@b.c' }) },
+      fetcher,
+    );
+
+    const result = await service.run(WEEK_MONDAY);
+
+    expect(result.status).toBe('skipped');
+    expect(result.reason).toBe(
+      'GOOGLE_SERVICE_ACCOUNT invalid: missing client_email, private_key, or token_uri',
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reports failure, records SHEETS_JOB_FAILED (with the error), and never throws', async () => {
     await configureSpreadsheet();
     const { fetcher } = recordingFetch(async () => new Response('forbidden', { status: 403 }));
     const service = new WeeklySheetService(db, envWithCreds(), fetcher);
@@ -240,6 +270,27 @@ describe('WeeklySheetService', () => {
     const audits = await db.select().from(schema.auditLogs).where(eqAction('SHEETS_JOB_FAILED'));
     expect(audits).toHaveLength(1);
     expect(audits[0].metadata).toContain('failed');
+    expect(audits[0].metadata).toContain('Google token exchange failed');
+  });
+
+  it('returns failed without throwing when the database is unavailable', async () => {
+    await configureSpreadsheet();
+    const brokenDb = new Proxy(
+      {},
+      {
+        get: () => () => {
+          throw new Error('database unavailable');
+        },
+      },
+    ) as unknown as DbClient;
+    const { fetcher, calls } = recordingFetch(async () => new Response('unexpected', { status: 500 }));
+    const service = new WeeklySheetService(brokenDb, envWithCreds(), fetcher);
+
+    const result = await service.run(WEEK_MONDAY);
+
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('database unavailable');
+    expect(calls).toHaveLength(0);
   });
 
   it('uses the deterministic tab name when no prefix is configured', async () => {
