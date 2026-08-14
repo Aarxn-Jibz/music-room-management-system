@@ -31,16 +31,17 @@ requestAuthRoutes.get('/', async (c) => {
   }
 
   const actor = c.get('user');
-  if (parseResult.data.user_id && actor.role !== 'ADMIN' && parseResult.data.user_id !== actor.id) {
-    return c.json({ message: 'Forbidden: You can only view your own requests' }, 403);
-  }
+  // Non-admins can only ever see their own requests. The client-supplied
+  // user_id is ignored for them (not just validated) so a regular user cannot
+  // leak other users' bookings by simply omitting the filter.
+  const userId = actor.role === 'ADMIN' ? parseResult.data.user_id : actor.id;
 
   const service = buildService(c);
 
   try {
     const requests = await service.list({
       roomId: parseResult.data.room_id,
-      userId: parseResult.data.user_id,
+      userId,
     });
     return c.json(requests);
   } catch (err) {
