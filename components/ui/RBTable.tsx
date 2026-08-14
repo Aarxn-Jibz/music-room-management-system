@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import axios from "axios";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth";
 import { FaCalendarAlt, FaChevronLeft, FaChevronRight } from "react-icons/fa";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -122,6 +122,13 @@ const RBTable = () => {
         setSelectedBandId((session.user as any).band_id || "");
     }
   }, [session, isAdmin]);
+
+  useEffect(() => {
+    const roomNumbers = Object.keys(roomMapping).map(Number);
+    if (roomNumbers.length > 0 && !roomNumbers.includes(selectedRoomNumber)) {
+      setSelectedRoomNumber(roomNumbers[0]);
+    }
+  }, [roomMapping, selectedRoomNumber]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

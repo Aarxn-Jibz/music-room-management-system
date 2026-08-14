@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth";
 import { motion } from "framer-motion";
 import { FaEdit, FaTrash, FaPlus } from "react-icons/fa";
 import Modal from "@/components/ui/Modal";
@@ -56,8 +56,8 @@ const RegisterPage = () => {
         fetch("/api/users"),
         fetch("/api/bands"),
       ]);
-      const usersData = await usersRes.json();
-      const bandsData = await bandsRes.json();
+      const usersData = (await usersRes.json()) as DbUser[];
+      const bandsData = (await bandsRes.json()) as Band[];
       setDbUsers(usersData);
       setBands(bandsData);
     } catch (error) {

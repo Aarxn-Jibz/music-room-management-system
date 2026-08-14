@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import dynamic from "next/dynamic";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import DashboardTable from "@/components/ui/DashboardTable";
 import { MotionWrapper } from "@/components/ui/MotionWrapper";

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { signIn, signOut, useSession } from "@/lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import Modal from "./ui/Modal";
 import RegistrationModal from "./ui/RegistrationModal";

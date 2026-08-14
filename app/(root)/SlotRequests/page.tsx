@@ -3,7 +3,7 @@
 import React, { useEffect } from "react";
 import dynamic from "next/dynamic";
 import SlotsRequestsTable from "../../../components/ui/SlotsRequestTable";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import { MotionWrapper } from "@/components/ui/MotionWrapper";
 

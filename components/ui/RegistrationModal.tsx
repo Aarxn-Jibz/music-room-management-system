@@ -31,7 +31,7 @@ export default function RegistrationModal({
         try {
           setLoadingBands(true);
           const res = await fetch("/api/bands");
-          const data = await res.json();
+          const data = (await res.json()) as Band[];
           setRegBands(data);
         } catch (e) {
           console.error("unable to load bands", e);
@@ -62,7 +62,7 @@ export default function RegistrationModal({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as { message?: string };
       if (!res.ok) {
         setRegError(data.message || "Registration failed");
       } else {
