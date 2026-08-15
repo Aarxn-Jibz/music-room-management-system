@@ -58,7 +58,7 @@ Open [http://localhost:3000](http://localhost:3000) — you'll be redirected to 
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@admin.in | admin |
+| Admin | admin@rejoy.local | admin123 |
 | User | (create via Register page when logged in as admin) | — |
 
 ## Available Scripts

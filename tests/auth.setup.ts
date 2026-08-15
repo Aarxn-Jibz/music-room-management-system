@@ -1,7 +1,7 @@
 import { test as setup, expect } from "@playwright/test";
 
-const adminEmail = "admin@admin.in";
-const adminPassword = "admin";
+const adminEmail = "admin@rejoy.local";
+const adminPassword = "admin123";
 
 setup("authenticate as admin", async ({ page }) => {
   await page.goto("/");

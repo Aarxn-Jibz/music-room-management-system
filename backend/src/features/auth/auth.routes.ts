@@ -12,12 +12,11 @@ function serializeCookie(
   name: string,
   value: string,
   maxAge: number,
-  env: string | undefined,
+  isSecure: boolean,
 ): string {
-  const isProd = env === 'production';
   let cookie = `${name}=${encodeURIComponent(value)}`;
   cookie += '; HttpOnly';
-  if (isProd) {
+  if (isSecure) {
     cookie += '; Secure';
   }
   cookie += '; SameSite=Strict';
@@ -48,7 +47,7 @@ authRoutes.post('/login', async (c) => {
 
     c.header(
       'Set-Cookie',
-      serializeCookie('token', result.token, 86400, c.env.ENV || 'production'),
+      serializeCookie('token', result.token, 86400, c.req.url.startsWith('https://')),
       { append: true },
     );
 
@@ -95,7 +94,7 @@ authRoutes.post('/logout', requireAuth(), async (c) => {
 
   await authService.logout(session.id);
 
-  c.header('Set-Cookie', serializeCookie('token', '', 0, c.env.ENV || 'production'), {
+  c.header('Set-Cookie', serializeCookie('token', '', 0, c.req.url.startsWith('https://')), {
     append: true,
   });
 
