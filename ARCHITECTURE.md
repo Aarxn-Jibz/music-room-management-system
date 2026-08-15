@@ -85,29 +85,35 @@ A full-stack web application for managing music room bookings, slot requests, an
 ```
 ├── app/                              # Next.js App Router pages
 │   ├── (root)/
+│   │   ├── layout.tsx                # Root layout: Geist fonts, Providers, ForcePasswordChange
 │   │   ├── Dashboard/                # Slot configuration (admin)
 │   │   ├── Register/                 # User & band management (admin)
 │   │   ├── RoomBooking/              # Room timetable (public)
-│   │   ├── SlotRequests/             # Slot request approval (admin)
+│   │   ├── SlotRequests/             # Slot request approval (auth required)
 │   │   └── home/                     # Landing page (public)
 │   │   └── page.tsx                  # Redirects / → /RoomBooking
-│   ├── globals.css                   # Tailwind + glassmorphism utilities
-│   ├── layout.tsx                    # Root layout (Navbar, providers)
-│   └── providers.tsx                 # ThemeProvider
+│   ├── globals.css                   # Tailwind + dark theme utilities
+│   ├── providers.tsx                 # AuthProvider + ThemeProvider
+│   └── fonts/                        # Geist font files
 │
 ├── backend/                          # Hono API (Cloudflare Workers + D1)
 │   ├── src/
 │   │   ├── db/                       # Drizzle schema + client + repositories
-│   │   ├── features/                 # auth, bands, rooms, requests, slots, ...
+│   │   ├── features/                 # auth, users, bands, rooms, slotconfig, slots, requests, entrylogs, settings, sheets
 │   │   ├── middleware/               # auth + rate-limit middleware
-│   │   ├── sheets/                   # Weekly Google Sheets export
-│   │   ├── email/                    # Booking notification emails
+│   │   ├── sheets/                   # Weekly Google Sheets export (grid, service-account JWT, time)
+│   │   ├── email/                    # Booking notification emails (raw SMTP via Cloudflare Sockets)
+│   │   ├── audit/                    # audit_logs helper
+│   │   ├── lib/                      # jwt, password helpers
 │   │   └── index.ts                  # Hono app + route mounting
+│   ├── drizzle/                      # Drizzle migration SQL files
+│   ├── scripts/                      # Dev harnesses (weekly-sheet dry run)
 │   ├── drizzle.config.ts             # Drizzle Kit configuration (D1)
+│   ├── wrangler.json                 # Worker config: D1 binding, JWT secret, cron trigger
 │   └── package.json                  # Backend deps + scripts
 │
 ├── components/
-│   ├── Navbar.tsx                    # Top nav: links, login/logout, mobile menu
+│   ├── Navbar.tsx                    # Top nav: links, login/logout, mobile hamburger (per-page, no SSR)
 │   ├── Branches.tsx                  # Branch info section (home page)
 │   ├── Hero.tsx                      # Hero section with glowing stars
 │   ├── Mission.tsx                   # Mission statement section
@@ -123,8 +129,10 @@ A full-stack web application for managing music room bookings, slot requests, an
 │   │   ├── ProfileDropdown.tsx       # Single-band select with colour dots
 │   │   ├── RoomDropdown.tsx          # Numeric room selector
 │   │   ├── FilterDropdown.tsx        # Generic filter dropdown
+│   │   ├── ForcePasswordChange.tsx   # Forced first-login password change modal
+│   │   ├── NotificationSettings.tsx  # Admin notification-email settings card
+│   │   ├── WeeklySheetSettings.tsx   # Google Sheets config + manual export
 │   │   ├── MotionWrapper.tsx         # Fade-in animation wrapper
-│   │   ├── RegistrationModal.tsx     # User registration form modal
 │   │   ├── MagicButton.tsx           # Shimmer-animated button
 │   │   ├── events.tsx               # Event cards with scroll reveal
 │   │   ├── focus-cards.tsx           # Hover-reactive image grid
@@ -142,7 +150,7 @@ A full-stack web application for managing music room bookings, slot requests, an
 ├── middleware.ts                      # Route-level JWT auth guard
 ├── playwright.config.ts               # Playwright config (6 projects)
 ├── vercel.json                        # Vercel deployment config
-├── next.config.ts                     # Next.js configuration
+├── next.config.ts                     # Next.js configuration (rewrites /api/* to backend)
 ├── tailwind.config.ts                 # Tailwind CSS configuration
 └── lib/utils.ts                       # cn() helper (clsx + tailwind-merge)
 ```
@@ -289,11 +297,17 @@ erDiagram
 
 ### Backend JWT Auth (`backend/src/features/auth/`)
 
-- **Login:** `POST /api/auth/login` — validates credentials (username or email) against `users`, compares via `bcryptjs`, creates a `sessions` row, and sets an HttpOnly cookie (`token`) signed with `jose` using `JWT_SECRET`
-- **Registration:** `POST /api/auth/register` — admin-only (requires auth + admin role + password already changed); new users start with the `changeit` default password and `must_change_password = true`
+- **Login:** `POST /api/auth/login` — validates credentials (username **or** email) against `users`, compares via `bcryptjs`, creates a `sessions` row, and sets an HttpOnly cookie (`token`) signed with `jose` using `JWT_SECRET`
+- **Registration:** `POST /api/auth/register` — admin-only (requires auth + password changed + admin role); new users start with the `changeit` default password and `must_change_password = true`
 - **Logout:** `POST /api/auth/logout` — revokes the session and clears the cookie
 - **Me:** `GET /api/auth/me` — returns the current user with their profiles
 - **Change password:** `PATCH /api/auth/me/password` — requires the current password; clears `must_change_password`
+
+### Forced Password Change Flow
+
+1. New users are created (admin-only `POST /api/auth/register`) with `must_change_password = true` and password `changeit`
+2. Every protected endpoint (except logout and password change) is gated by `requirePasswordChanged()`, which returns **403** while the flag is set
+3. The frontend `ForcePasswordChange` modal (mounted in `app/(root)/layout.tsx`) appears whenever `session.user.mustChangePassword === true`; it is non-dismissible until the user completes `PATCH /api/auth/me/password`
 
 ### JWT Flow
 
@@ -314,7 +328,7 @@ backend middleware ── requireAuth() verifies JWT + loads user/session
 `middleware.ts` verifies the JWT on every request using `jose`. The `matcher` config defines which routes require authentication:
 
 ```typescript
-matcher: ["/((?!api|_next/static|_next/image|favicon.ico|home|RoomBooking).+)"]
+matcher: ["/((?!api|_next/static|_next/image|favicon.ico|home|RoomBooking|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|woff2?|ttf|eot|mp4|webm)$).+)"]
 ```
 
 | Route | Public | Notes |
@@ -323,19 +337,19 @@ matcher: ["/((?!api|_next/static|_next/image|favicon.ico|home|RoomBooking).+)"]
 | `/RoomBooking` | ✅ | Timetable viewable by anyone |
 | `/home` | ✅ | Landing page |
 | `/api/*` | ✅ | Backend handles its own auth |
+| `/SlotRequests` | ❌ | Any signed-in user; approve/deny gated on `role === "admin"` in the table |
 | `/Dashboard` | ❌ | Requires auth + admin role check in component |
 | `/Register` | ❌ | Requires auth + admin role check in component |
-| `/SlotRequests` | ❌ | Requires auth + admin role check in component |
 
-Unauthenticated requests to protected routes redirect to `/home`.
+Unauthenticated requests to protected routes redirect to `/home?callbackUrl=...`. Admin pages additionally redirect to `/` when a non-admin is signed in.
 
 ### Frontend Role Checks
 
 Components check `user?.role === 'admin'` (from the `AuthProvider` context in `lib/auth.tsx`):
-- **Navbar**: Admin-only links (`/Register`, `/Dashboard`, `/SlotRequests`) are hidden from non-admins
-- **SlotsRequestTable**: Approve/deny/edit buttons only visible to admin
-- **RBTable**: Booking modal doesn't show admin-only fields for non-admins
-- **Register page**: Entire page checks role before rendering
+- **Navbar**: Admin-only links (`/Register`, `/Dashboard`) are hidden from non-admins
+- **SlotsRequestTable**: Approve/deny/edit buttons only visible when `isAdmin` is true
+- **RBTable**: Booking modal doesn't show admin-only fields for non-admins; non-admins book with their own band automatically
+- **Dashboard/Register pages**: Check role before rendering, redirect to `/` otherwise
 
 ---
 
@@ -353,30 +367,23 @@ All routes live in the Hono backend (`backend/src/features/*`) and are mounted u
 | `/api/auth/me` | GET | auth | Current user + profiles |
 | `/api/auth/me/password` | PATCH | auth | Change own password (clears `must_change_password`) |
 
-### `/api/requests` — GET, POST, PUT, DELETE
+### `/api/users` — GET, PUT, DELETE (admin)
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/api/requests` | GET | auth | List requests; non-admins only see their own |
-| `/api/requests` | POST | auth | Create request (conflict detection before insert) |
-| `/api/requests` | PUT | auth | Update request (approve/reject/edit) |
-| `/api/requests` | DELETE | auth | Delete request |
+GET lists users with their linked bands; PUT updates a user (name, email, role, band links) via `?id=`; DELETE removes a user via `?id=`.
 
-**Create request flow:**
-```
-1. Resolve room by number
-2. Find exact configured slot (via SlotPolicyService) for the requested time
-3. Validate booking horizon + policy constraints
-4. Check for active conflict (overlapping booking in same room)
-   → If found → throw CONFLICT: message with band name
-5. db.batch([ insert booking (PENDING), notification email ])
-```
+### `/api/bands` — GET, POST, PUT, DELETE
 
-**Approval flow (status → `"APPROVED"`):**
-- Re-checks for conflicts (excluding the request being edited) before approving
-- On conflict → 409 with the conflicting band name
+GET is public and returns bands with a `colour` field (mapped from `color`). POST creates a band (default colour `#4F46E5`); PUT/DELETE use `?id=`. Writes are admin-only (auth + password-changed + admin).
 
-### `/api/slots` — GET
+### `/api/rooms` — GET (public)
+
+Returns active rooms ordered by `number ASC, name`.
+
+### `/api/slotconfig` — GET, POST, PUT, DELETE
+
+GET is public; writes are admin-only. Because a slot config row is duplicated per day-of-week (7 rows), create/update/delete operate on the whole week: `createSlot` inserts 7 rows, `updateSlot`/`deleteSlot` match on `(policy_id, start_time, end_time)`. PUT sends `id` in the body; DELETE uses `?id=`.
+
+### `/api/slots` — GET (public)
 
 | Query Param | Type | Description |
 |------------|------|-------------|
@@ -386,33 +393,46 @@ All routes live in the Hono backend (`backend/src/features/*`) and are mounted u
 
 **Response:** Active bookings (`PENDING`/`APPROVED`) for the given range/room.
 
-### `/api/slotconfig` — GET, POST, PUT, DELETE
+### `/api/requests` — GET, POST, PUT, DELETE (auth)
 
-Full CRUD on `slot_config`. Admin-only for writes. Simple operations with existence checks on PUT/DELETE (404 if not found).
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/requests` | GET | auth | List requests; non-admins only see their own (the client's `user_id` filter is ignored for non-admins) |
+| `/api/requests` | POST | auth | Create request (conflict detection before insert) |
+| `/api/requests?id=...` | PUT | auth | Update request (approve/reject/edit); only admins can change status |
+| `/api/requests?id=...` | DELETE | auth | Delete request |
 
-### `/api/bands` — GET, POST, PUT, DELETE
+**Create request flow:**
+```
+1. Resolve room by number
+2. Find exact configured slot (via SlotPolicyService) for the requested time
+3. Validate booking horizon + policy constraints
+4. Check for active conflict (overlapping booking in same room)
+   → If found → throw CONFLICT: message with band name
+5. db.batch([ insert booking (PENDING), audit log CREATE_BOOKING ]), then dispatch the "created" notification email
+```
 
-Full CRUD on `band`. Admin-only for writes. Simple operations with existence checks.
+**Approval flow (status → `"APPROVED"`):**
+- Re-checks for conflicts (excluding the request being edited) before approving
+- On conflict → 409 with the conflicting band name
 
-### `/api/users` — GET, PUT, DELETE
+**Status model:** DB statuses `PENDING | APPROVED | REJECTED | CANCELLED`; API statuses `pending | approved | denied` (REJECTED and CANCELLED both map to `denied`). `PENDING`/`APPROVED` are the "active" statuses that occupy a slot.
 
-Admin-only. GET lists users with their profiles; PUT updates a user (including role and profile links); DELETE removes a user.
+### `/api/entrylogs` — GET, POST (admin)
 
-### `/api/rooms` — GET
+Registered under the path `/api/entrylogs/entrylogs` (the router is mounted at `/entrylogs` and handlers are declared as `/entrylogs`). GET returns the last 200 `audit_logs` rows; POST writes an `ENTRY_SCAN` audit log entry.
 
-Returns all active rooms ordered by `number ASC`.
+### `/api/system-settings` — GET, PUT (admin)
 
-### `/api/entrylogs` — GET, POST
+Reads/writes the single `system_settings` row. Only `notification_email`, `sheets_spreadsheet_id`, and `sheets_sheet_name` are writable; empty strings are stored as `null`.
 
-Admin-only. GET returns entry logs; POST records a scan (writes an `audit_logs` entry with action `ENTRY_SCAN`).
+### `/api/sheets/weekly` — POST (admin)
 
-### `/api/system-settings` — GET, PUT
+Manually triggers the weekly Google Sheets export (writes `APPROVED` bookings only). Optional body `{ date }` (ISO) overrides the target week. Also runs automatically via cron (`30 15 * * 0` UTC).
 
-Admin-only. Reads/writes the single `system_settings` row (notification email, booking release day/time, sheets config).
+### `/health` — GET (public)
 
-### `/api/sheets/weekly` — POST
-
-Admin-only. Manually triggers the weekly Google Sheets export. Optional `date` (ISO) overrides the target week.
+Liveness check returning `{ status: "ok" }`.
 
 ---
 
@@ -423,8 +443,8 @@ Admin-only. Manually triggers the weekly Google Sheets export. Optional `date` (
 | Page | Route | Access | Key Feature |
 |------|-------|--------|-------------|
 | **Room Booking** | `/RoomBooking` | Public | Weekly timetable, room selector, booking modal |
-| **Slot Requests** | `/SlotRequests` | Admin | Approve/deny/edit, filters, search, pagination |
-| **Dashboard** | `/Dashboard` | Admin | Slot config CRUD, time pickers, enable/disable |
+| **Slot Requests** | `/SlotRequests` | Auth | Approve/deny/edit (admin only), filters, search, pagination |
+| **Dashboard** | `/Dashboard` | Admin | Slot config CRUD, notification settings, sheets settings |
 | **Register** | `/Register` | Admin | User + band management, ColorPicker, BandMultiSelect |
 | **Home** | `/home` | Public | Hero, Mission, Branches, Events sections |
 | **Root** | `/` | Public | Redirects to `/RoomBooking` |
@@ -433,40 +453,53 @@ Admin-only. Manually triggers the weekly Google Sheets export. Optional `date` (
 
 #### `Navbar.tsx`
 - Fixed top bar, hides on scroll-down, shows on scroll-up
-- Desktop links with active indicator (purple dot)
+- Desktop links with active indicator; links require auth (`/RoomBooking`, `/SlotRequests`) or admin (`/Dashboard`, `/Register`)
 - Mobile hamburger menu with `AnimatePresence` animation
-- Inline login modal + RegistrationModal
-- Admin-only links conditionally rendered
+- Inline login `Modal` (no separate registration modal — "Contact an admin")
+- Dynamically imported per-page with `ssr: false`
+
+#### `ForcePasswordChange.tsx` (mounted in root layout)
+- Non-dismissible modal shown whenever `session.user.mustChangePassword === true`
+- Calls `PATCH /api/auth/me/password` with current + new password; refreshes session on success
 
 #### `RBTable.tsx` (Room Booking Table — core component)
 - **Week navigation:** prev/next chevrons, "Today" button, date picker trigger
 - **Room selector:** `RoomDropdown` to switch between rooms
-- **Grid layout:** Rows = time slots (from `slotConfig`), Columns = days of week
+- **Grid layout:** Rows = time slots (from `slotconfig`), Columns = days of week
 - **Booking display:** Cells coloured by band colour, row-span merged for consecutive same-band bookings
 - **Booking modal:** Opens on cell click — shows band selector (ProfileDropdown), date+time fields, reason
 - **Week cache:** `useRef<Map<string, CacheEntry>>` — max 20 entries, cache-first, cleared on new booking
 - **Scroll-edge gradient:** Right-edge gradient overlay when table overflows horizontally
 - **Animation:** `AnimatePresence mode="wait"` around table with 0.1s crossfade on week navigation
+- Non-admin users book with their own band (auto-selected); admins pick any band
 
 #### `SlotsRequestTable.tsx`
-- **Filters:** Room, status (pending/approved/rejected), date, text search
+- **Filters:** Room, status (pending/approved/denied), date, text search (matches user or band name)
 - **Action buttons:** Admin sees approve/deny/edit; all users see delete
 - **Edit modal:** Room/Date/Time in `flex-col sm:flex-row`, Status + Reason full-width
 - **Pagination:** 7 per page, ellipsis truncation
-- **Error display:** 409 conflict errors show conflicting band name
+- **Error display:** 409 conflict errors show conflicting band name via `formatError`
 
 #### `DashboardTable.tsx`
 - **Add row:** Two TimePicker inputs + "Add Slot" button at top
 - **Table columns:** ID, Start, End, Status badge, Actions (toggle enabled/disabled, delete)
 - **12-hour display:** All times converted via `to12Hour` helper
 
+#### `NotificationSettings.tsx` (Dashboard)
+- Admin card that reads `GET /api/system-settings` and saves `notification_email` via `PUT /api/system-settings`
+- Save button disabled until the field is dirty; shows inline success/error
+
+#### `WeeklySheetSettings.tsx` (Dashboard)
+- Admin card to configure `sheets_spreadsheet_id` / `sheets_sheet_name` and a "Run export now" button (`POST /api/sheets/weekly`)
+- Maps the response `status` (`ok`/`skipped`/`failed`) to an inline message
+
 #### `Modal.tsx` (Reusable)
 - `AnimatePresence` with scale + opacity animation (0.2s)
-- Backdrop click to close (with `e.stopPropagation()`)
+- Backdrop click to close (with `e.stopPropagation()`), `dismissible` prop
 - Glassmorphism styling: `bg-black/50 backdrop-blur-xl border-white/20 rounded-3xl`
 
 #### `TimePicker.tsx`
-- Generates times from 06:00 to 21:30 in 30-minute increments
+- Generates times from 06:00 to 21:00 in 30-minute increments (31 options)
 - Displays in 12-hour AM/PM format
 - Click-outside-to-close, `AnimatePresence` dropdown
 - Custom scrollbar: `max-h-40 overflow-y-auto`
@@ -567,9 +600,10 @@ const getPageNumbers = (current: number, total: number) => {
   │ 3. Fill form + submit         │                              │                            │
   │───→                          │                              │                            │
   │                               │──POST /api/requests─────────→│                            │
-  │                               │                              │──findExactSlot + conflict──→│
+  │                               │                              │  findExactSlot + conflict  │
   │                               │                              │  check                     │
-  │                               │                              │  db.batch([insert, email]) │
+  │                               │                              │  db.batch([insert]) +      │
+  │                               │                              │  email after              │
   │                               │←── 201 / 409 ───────────────│←───────── done ────────────│
   │  ←── success / error msg      │                              │                            │
   │                               │                              │                            │
@@ -591,8 +625,8 @@ const getPageNumbers = (current: number, total: number) => {
   │                               │──PUT /api/requests?id=...───→│                            │
   │                               │  { status: "approved" }      │                            │
   │                               │                              │  re-check conflict         │
-  │                               │                              │  db.batch([update booking, │
-  │                               │                              │             email])        │
+  │                               │                              │  db.batch([update, audit]) │
+  │                               │                              │  + email after            │
   │                               │←── 200 + updated request ───│←───────── done ────────────│
   │  ←── table updates            │                              │                            │
   │                               │                              │                            │
@@ -612,7 +646,7 @@ sequenceDiagram
     participant API as POST /api/requests
     participant DB as D1 (SQLite)
 
-    Client->>API: POST { room_id, date, start_time, end_time, band_id, reason }
+    Client->>API: POST { user_id, band_id, room_id, slot_start, slot_end, reason }
     API->>DB: SELECT room by number
     API->>DB: findExactSlot (policy schedule + release window)
     alt Slot not available
@@ -624,7 +658,8 @@ sequenceDiagram
         DB-->>API: Found conflict
         API-->>Client: 409 CONFLICT: "Time slot already booked by [band]"
     end
-    API->>DB: db.batch([ INSERT booking (PENDING), notification email ])
+    API->>DB: db.batch([ INSERT booking (PENDING), audit log CREATE_BOOKING ])
+    API->>DB: dispatch "created" notification email (after batch)
     API-->>Client: 201 Created
 ```
 
@@ -668,8 +703,10 @@ function loadWeek(weekStart: Date, roomNumber: number) {
 |---------|---------|
 | **Card/Container** | `bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl` |
 | **Input** | `bg-white/10 border-white/20 rounded-xl text-white font-mono` |
-| **Primary Button** | `bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white` |
+| **Primary Button** | `bg-gradient-to-r from-purple-600 to-purple-500 text-white` |
+| **Danger Button** | `bg-gradient-to-r from-red-600 to-red-500` |
 | **Ghost Button** | `hover:bg-white/10 transition-colors` |
+| **Accent Bar** | `bg-gradient-to-r from-purple-600 via-purple-400 to-purple-600` (week-loading bar) |
 | **Modal** | `bg-black/50 backdrop-blur-xl border border-white/20 rounded-3xl` |
 | **Table Header** | `bg-gray-900 sticky top-0 z-10` |
 | **Table Cell** | `font-mono` + `gray-400` (band/user columns) or `gray-500` (date columns) |
@@ -719,9 +756,9 @@ Key patterns across all pages:
 
 ### Test Stack
 
-- **Backend unit tests:** Vitest (88 tests across 11 suites)
-- **UI tests:** Playwright
-- **API tests:** Node.js scripts using `fetch`/`axios`
+- **Backend unit tests:** Vitest (88 tests across 11 suites, 207 `expect()` calls) — auth/jwt/password, request service + slot policy, email, sheets (grid/google/jwt/service/time)
+- **UI tests:** Playwright (34 assertions-heavy tests across 5 projects + auth setup)
+- **API tests:** Plain Node.js scripts using `axios` (no test framework — hand-rolled `assert()` counters)
 - **Projects:** 6 (shared auth setup + 5 test projects)
 
 ### Playwright Configuration
@@ -737,9 +774,9 @@ projects: [
 ]
 ```
 
-### API Tests (Pure Node.js, no Playwright)
+### API Tests (Plain Node.js, no test framework)
 
-Each `*-api.test.mjs` file uses `fetch()`/`axios` directly against the dev server or production URL. No dev server dependency — they can run against any running instance by setting `BASE_URL` env var.
+Each `*-api.test.mjs` file uses `axios` with `validateStatus: () => true` (never throws on HTTP errors) against a running instance (dev or production) via `BASE_URL`. Results are counted with a hand-rolled `assert()` helper and reported as `X/Y passed`.
 
 | Suite | File | What It Covers |
 |-------|------|----------------|
@@ -747,6 +784,8 @@ Each `*-api.test.mjs` file uses `fetch()`/`axios` directly against the dev serve
 | Slot Requests | `slotrequests-api.test.mjs` | CRUD + conflict detection 409 on POST + PUT |
 | Dashboard | `dashboard-api.test.mjs` | Slot config CRUD, validation, 404 handling |
 | Register | `register-api.test.mjs` | User CRUD, band CRUD, user-profile relationships |
+
+> **Note:** the slotrequests and dashboard suites depend on live seeded data (pending/approved requests, existing slot configs) and report failures when that state is absent. Only `roombooking-api.test.mjs` is wired to `npm run test:api`.
 
 ### API Test Pattern
 
@@ -804,7 +843,8 @@ BASE_URL=https://your-app.vercel.app node tests/roombooking-api.test.mjs
 - Playwright `getByText` is case-insensitive and fails on multiple matches → use heading roles or `locator("button").filter({ hasText: })`
 - ColorPicker trigger targeted via `locator("button").filter({ hasText: "#ffffff" })` because `getByText` matches both trigger and table cells
 - `/api/users` returns `bands` (lowercase b), while register returns `Bands` (capital B)
-- PostgreSQL `TIME` type returns `06:00:00` (with `:00` suffix) not `06:00`
+- Several UI tests and the slotrequests/dashboard API suites `test.skip()` / report failures when the required seed data (pending requests, bands, enough configs) is absent — they are data-dependent, not hermetic
+- `requests.service.test.ts` and `slot-policy.test.ts` hard-code dates relative to 2026-08-17 and will drift as the clock advances (time-bomb in the vitest suite)
 
 ---
 
@@ -816,6 +856,8 @@ BASE_URL=https://your-app.vercel.app node tests/roombooking-api.test.mjs
 ```json
 {
   "framework": "nextjs",
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
   "installCommand": "npm install --legacy-peer-deps"
 }
 ```
@@ -890,11 +932,11 @@ await this.db.batch([
 
 **Solution:** Each request obtains a D1 binding and wraps it via `drizzle-orm/d1` in `backend/src/db/client.ts`. D1 handles connection pooling internally on Cloudflare's side — no app-level pool needed.
 
-### 13.3 Middleware vs `withAuth`
+### 13.3 Route Protection Without NextAuth
 
-**Problem:** Need to protect admin routes while keeping `/RoomBooking`, `/home`, and `/api/*` public.
+**Problem:** Need to protect `/SlotRequests`, `/Dashboard`, and `/Register` while keeping `/RoomBooking`, `/home`, and `/api/*` public.
 
-**Solution:** Custom `middleware.ts` using `jose` to verify the JWT instead of NextAuth's `withAuth` middleware. This gives explicit per-route control via the `matcher` config and avoids wrapping every page in `getServerSession` calls.
+**Solution:** Custom `middleware.ts` using `jose` to verify the JWT (there is no NextAuth in the codebase). The `matcher` regex skips `/api/*`, static assets, `/home`, and `/RoomBooking`; everything else gets the JWT check. This gives explicit per-route control and avoids wrapping every page in server-session calls. Unauthenticated visitors are redirected to `/home?callbackUrl=...`.
 
 ### 13.4 Scrollbar Flicker Fix
 
@@ -935,21 +977,19 @@ await this.db.batch([
 ## 14. Component Tree
 
 ```
-<RootLayout>
-  <AuthProvider>                        ← JWT session context
-    <ThemeProvider attribute="class" defaultTheme="dark">
-      <Navbar>                              ← Fixed top nav
-        ├── Logo + "Home" link             → /home
-        ├── Desktop nav links              → conditional on role
-        ├── Auth buttons (Login / Logout)  → opens Modal or signs out
-        └── Mobile hamburger menu          → AnimatePresence panel (same links)
-      </Navbar>
-      <main>                                ← px-4 sm:px-10
-        {children}                           ← Page content
-      </main>
-    </ThemeProvider>
-  </AuthProvider>
+<RootLayout>                          ← app/(root)/layout.tsx
+  <Providers>                          ← app/providers.tsx (AuthProvider + ThemeProvider)
+    <AuthProvider>                     ← JWT session context (lib/auth.tsx)
+      <ThemeProvider attribute="class" defaultTheme="dark">
+        {children}                     ← Page content
+      </ThemeProvider>
+    </AuthProvider>
+    <ForcePasswordChange />            ← Non-dismissible modal when mustChangePassword
+  </Providers>
 </RootLayout>
+```
+
+> **Note:** `<Navbar>` is **not** rendered in the layout — each page imports it via `next/dynamic` with `{ ssr: false }`. The root layout lives at `app/(root)/layout.tsx` (not `app/layout.tsx`) and also mounts `ForcePasswordChange`.
 
 ┌── Page: /RoomBooking ─────────────────────────────────────────────────┐
 │  <MotionWrapper>                                                       │
@@ -997,29 +1037,28 @@ await this.db.batch([
 └────────────────────────────────────────────────────────────────────────┘
 
 ┌── Page: /Register ────────────────────────────────────────────────────┐
-│  Two-panel glassmorphism layout                                        │
-│  ├── Panel 1: "Register User"                                         │
-│  │   ├── Name, Email, Password inputs                                 │
-│  │   ├── BandMultiSelect                                               │
-│  │   └── Gradient "Register" button                                    │
-│  ├── Panel 2: "Users" table                                            │
-│  │   └── Table with edit/delete                                        │
-│  ├── Panel 3: "Create Band"                                            │
-│  │   ├── Name input                                                    │
-│  │   └── ColorPicker                                                   │
-  │  └── Panel 4: "Bands" table                                            │
-  │      └── Table with edit/delete                                        │
-  └────────────────────────────────────────────────────────────────────────┘
+│  Two-panel grid (grid-cols-1 lg:grid-cols-2)                           │
+│  ├── Panel 1: "Users" table                                            │
+│  │   ├── "Register User" button → opens UserForm in a Modal            │
+│  │   │   └── UserForm: Name, Email, Password, BandMultiSelect          │
+│  │   └── Table with edit/delete per row                                │
+│  ├── Panel 2: "Bands" table                                            │
+│  │   ├── "Create Band" button → opens BandForm in a Modal              │
+│  │   │   └── BandForm: Name, ColorPicker (hex input + HSV canvas)      │
+│  │   └── Table with edit/delete per row (colour swatches)              │
+└────────────────────────────────────────────────────────────────────────┘
 
 ┌── Page: /home ────────────────────────────────────────────────────────┐
-│  <Hero>                                                                │
-│    ├── GlowingStarsBackground                                          │
-│    ├── TextGenerateEffect ("Student Welfare Office Kengeri")           │
-│    └── Subtitle                                                        │
-│  <Mission />                                                           │
-│  <Branches />                                                          │
-│  <EventsPage />                                                        │
-│    └── Event cards with scroll-triggered fade-in                       │
+│  <MotionWrapper>                                                        │
+│    <Hero>                                                               │
+│      ├── GlowingStarsBackground                                         │
+│      ├── TextGenerateEffect ("Student Welfare Office Kengeri")          │
+│      └── Subtitle                                                       │
+│    <Mission />                                                          │
+│    <Branches />                                                         │
+│    <Events />                                                           │
+│      └── Event cards with scroll-triggered fade-in                      │
+│  </MotionWrapper>                                                       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1077,22 +1116,28 @@ When approving or editing a booking, the service re-runs the active-conflict che
 | Script | What It Does | Notes |
 |--------|-------------|-------|
 | `npm run dev` | `next dev` — starts dev server |
-| `npm run build` | `next build` — production build | Runs ESLint (ignored), generates static pages |
+| `npm run build` | `next build` — production build | ESLint ignored via `next.config.ts` (see 13.8) |
 | `npm run start` | `next start` — starts production server |
-| `npm run lint` | `next lint` — runs ESLint | Works standalone despite build flag |
-| `npm run test:api` | Runs roombooking API tests | Run others individually |
+| `npm run lint` | `next lint` — runs ESLint | Works standalone despite the build flag |
+| `npm run test:api` | Runs the roombooking API suite (`node tests/roombooking-api.test.mjs`) | Other `*-api` suites must be run individually |
 | `npm run test:ui` | `playwright test` — runs all UI projects |
 | `npm run test:ui:headed` | `playwright test --headed` — visible browser |
+| `npm run test` | Alias for `playwright test` |
 
 ### Backend Scripts (`backend/`)
 
 | Script | What It Does |
 |--------|-------------|
-| `npm run dev` | Starts the Hono API locally via Wrangler |
-| `npm run test` | Runs the Vitest suite (backend unit tests) |
+| `npm run dev` | Starts the Hono API locally via `wrangler dev` |
+| `npm run deploy` | Deploys the Worker via `wrangler deploy` |
 | `npm run db:generate` | Generates a new Drizzle migration |
 | `npm run db:migrate` | Applies migrations to the local D1 database |
 | `npm run db:migrate:prod` | Applies migrations to the remote D1 database |
+| `npm run db:seed` | Seeds the local D1 database (admin user, rooms, slot configs, test data) via `tsx` |
+| `npm run sheets:dry-run` | Runs the weekly Google Sheets export against a fixture file (no live API calls) |
+| `npm run typecheck` | `tsc --noEmit` — type-checks the backend |
+| `npm run test` | Runs the Vitest suite (backend unit tests) |
+| `npm run test:watch` | `vitest` — runs unit tests in watch mode |
 
 ---
 
