@@ -16,13 +16,13 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  const url = new URL("/SignIn", req.url);
+  const url = new URL("/home", req.url);
   url.searchParams.set("callbackUrl", req.nextUrl.pathname);
   return NextResponse.redirect(url);
 }
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|SignIn|RoomBooking|home|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|woff2?|ttf|eot|mp4|webm)$).+)",
+    "/((?!api|_next/static|_next/image|favicon.ico|home|RoomBooking|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|woff2?|ttf|eot|mp4|webm)$).+)",
   ],
 };
