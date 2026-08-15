@@ -3,7 +3,7 @@ import { loginSchema, changePasswordSchema, registerSchema } from '../../schemas
 import { getDb } from '../../db/client.js';
 import { DrizzleAuthRepository } from './auth.repository.js';
 import { AuthService } from './auth.service.js';
-import { requireAuth, requirePasswordChanged, AppEnv } from '../../middleware/auth.middleware.js';
+import { requireAuth, requirePasswordChanged, requireAdmin, AppEnv } from '../../middleware/auth.middleware.js';
 import { resolveJwtSecret } from '../../config/index.js';
 
 const authRoutes = new Hono<AppEnv>();
@@ -64,7 +64,7 @@ authRoutes.post('/login', async (c) => {
   }
 });
 
-authRoutes.post('/register', async (c) => {
+authRoutes.post('/register', requireAuth(), requirePasswordChanged(), requireAdmin(), async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as unknown;
   const parseResult = registerSchema.safeParse(body);
   if (!parseResult.success) {
@@ -101,7 +101,7 @@ authRoutes.post('/logout', requireAuth(), async (c) => {
   return c.json({ success: true });
 });
 
-authRoutes.get('/me', requireAuth(), requirePasswordChanged(), async (c) => {
+authRoutes.get('/me', requireAuth(), async (c) => {
   const user = c.get('user');
   const db = getDb(c.env.DB);
   const authRepo = new DrizzleAuthRepository(db);

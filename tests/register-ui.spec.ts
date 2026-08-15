@@ -64,7 +64,7 @@ test.describe("Register Page", () => {
     // Form fields
     await expect(page.getByPlaceholder("Name")).toBeVisible();
     await expect(page.getByPlaceholder("Email")).toBeVisible();
-    await expect(page.getByPlaceholder("Password")).toBeVisible();
+    await expect(page.getByPlaceholder("Password")).toHaveCount(0);
     await expect(page.getByText("Select profiles")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
 
@@ -156,7 +156,7 @@ test.describe("Register Page", () => {
     // Fill form fields
     await page.getByPlaceholder("Name").fill(`Test User ${ts}`);
     await page.getByPlaceholder("Email").fill(uniqueEmail);
-    await page.getByPlaceholder("Password").fill("testpass123");
+    await expect(page.getByPlaceholder("Password")).toHaveCount(0);
 
     // Select the first band in BandMultiSelect
     await page.getByText("Select profiles").click();

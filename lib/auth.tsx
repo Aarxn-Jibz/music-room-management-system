@@ -9,6 +9,7 @@ export interface SessionUser {
   role: string;
   band_id: string | null;
   bands: { id: string; name: string }[];
+  mustChangePassword?: boolean;
 }
 
 export interface Session {
@@ -38,6 +39,7 @@ function toSession(user: {
   email: string;
   role: string;
   bands?: { id: string; name: string }[];
+  mustChangePassword?: boolean;
 }): Session {
   return {
     user: {
@@ -47,6 +49,7 @@ function toSession(user: {
       role: user.role,
       band_id: user.bands && user.bands.length > 0 ? user.bands[0].id : null,
       bands: user.bands ?? [],
+      mustChangePassword: user.mustChangePassword,
     },
     expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   };
@@ -62,6 +65,7 @@ async function fetchMe(): Promise<Session | null> {
       email: string;
       role: string;
       bands?: { id: string; name: string }[];
+      mustChangePassword?: boolean;
     };
     return toSession(user);
   } catch {
@@ -136,4 +140,25 @@ export async function signOut(options?: { callbackUrl?: string }): Promise<void>
   }
   const url = options?.callbackUrl || "/";
   window.location.assign(url);
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  try {
+    const res = await fetch("/api/auth/me/password", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword }),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      return { error: "Invalid current password" };
+    }
+    window.dispatchEvent(new Event(AUTH_REFRESH_EVENT));
+    return { ok: true };
+  } catch {
+    return { error: "Something went wrong. Please try again." };
+  }
 }

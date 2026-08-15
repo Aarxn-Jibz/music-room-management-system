@@ -1,7 +1,7 @@
 import { signToken } from '../../lib/jwt.js';
 import { hashPassword, verifyPassword } from '../../lib/password.js';
 import { IAuthRepository } from './auth.repository.js';
-import { RegisterInput } from '../../schemas.js';
+import { RegisterInput, DEFAULT_USER_PASSWORD } from '../../schemas.js';
 import { toUserDTOWithPasswordFlag, UserDTOWithPasswordFlag } from '../../dto.js';
 import { User } from '../../db/repositories/users.repository.js';
 
@@ -90,7 +90,8 @@ export class AuthService {
     }
 
     const now = Date.now();
-    const passwordHash = await hashPassword(input.password);
+    const password = input.password ?? DEFAULT_USER_PASSWORD;
+    const passwordHash = await hashPassword(password);
     const user = await this.authRepo.createUser({
       id: crypto.randomUUID(),
       username: email,
@@ -98,7 +99,7 @@ export class AuthService {
       name: input.name,
       passwordHash,
       role: 'USER',
-      mustChangePassword: false,
+      mustChangePassword: true,
       active: true,
       createdAt: now,
       updatedAt: now,

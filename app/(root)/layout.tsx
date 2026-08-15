@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "../globals.css";
 import Providers from "../providers";
+import ForcePasswordChange from "@/components/ui/ForcePasswordChange";
 
 const geistSans = localFont({
   src: "../fonts/GeistVF.woff",
@@ -31,7 +32,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <ForcePasswordChange />
+        </Providers>
       </body>
     </html>
   );
