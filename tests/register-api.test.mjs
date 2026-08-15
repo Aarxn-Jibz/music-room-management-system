@@ -28,28 +28,44 @@ async function main() {
   let originalUserName = null;
   const ts = Date.now();
 
-  // ── Step 1: POST /api/auth/register (missing name) ──
-  await step("POST /api/auth/register (missing name)", async () => {
-    const res = await api.post("/api/auth/register", { password: "x", email: "x@x.com" });
-    assert("returns 400", res.status === 400);
+  // ── Step 0: POST /api/auth/register (unauth) ──
+  await step("POST /api/auth/register (unauthenticated)", async () => {
+    const res = await api.post("/api/auth/register", { name: "X", email: "x@x.com" });
+    assert("returns 401", res.status === 401);
   });
 
-  // ── Step 2: POST /api/auth/register (missing password) ──
-  await step("POST /api/auth/register (missing password)", async () => {
-    const res = await api.post("/api/auth/register", { name: "X", email: "x@x.com" });
+  // ── Step 1: login as admin ──
+  await step("POST /api/auth/login (admin)", async () => {
+    const res = await api.post("/api/auth/login", {
+      email: "admin@rejoy.local",
+      password: "admin123",
+    });
+    assert("returns 200", res.status === 200);
+    const cookies = res.headers["set-cookie"] || [];
+    const token = cookies.find(c => c.startsWith("token="));
+    assert("sets token cookie", !!token);
+    if (token) {
+      api.defaults.headers.Cookie = token.split(";")[0];
+    }
+  });
+
+  // ── Step 2: POST /api/auth/register (missing name) ──
+  await step("POST /api/auth/register (missing name)", async () => {
+    const res = await api.post("/api/auth/register", { email: "x@x.com" });
     assert("returns 400", res.status === 400);
   });
 
   // ── Step 3: POST /api/auth/register (missing email) ──
   await step("POST /api/auth/register (missing email)", async () => {
-    const res = await api.post("/api/auth/register", { name: "X", password: "x" });
+    const res = await api.post("/api/auth/register", { name: "X" });
     assert("returns 400", res.status === 400);
   });
 
   // ── Step 4: POST /api/auth/register (duplicate email) ──
   await step("POST /api/auth/register (duplicate email)", async () => {
     const res = await api.post("/api/auth/register", {
-      name: "Dup", password: "x", email: "admin@admin.in",
+      name: "Dup",
+      email: "admin@rejoy.local",
     });
     assert("returns 400", res.status === 400);
   });
@@ -66,7 +82,7 @@ async function main() {
     }
   });
 
-  // ── Step 6: POST /api/auth/register (success with band) ──
+  // ── Step 6: POST /api/auth/register (success, default password, mustChangePassword) ──
   const testEmail = `register-test-${ts}@test.com`;
   await step("POST /api/auth/register (success)", async () => {
     if (!testBandId) {
@@ -75,7 +91,6 @@ async function main() {
     }
     const res = await api.post("/api/auth/register", {
       name: `Test User ${ts}`,
-      password: "testpass123",
       email: testEmail,
       bandIds: [testBandId],
     });
@@ -88,6 +103,7 @@ async function main() {
       assert("user has id", typeof testUserId === "string");
       assert("email matches", res.data.user.email === testEmail, `expected ${testEmail}, got ${res.data.user.email}`);
       assert("name matches", res.data.user.name === `Test User ${ts}`);
+      assert("default password flag mustChangePassword=true", res.data.user.mustChangePassword === true, `got ${res.data.user.mustChangePassword}`);
       // Verify the user appears in GET /api/users
       const getRes = await api.get("/api/users");
       const found = getRes.data.find(u => u.id === testUserId);
@@ -100,7 +116,42 @@ async function main() {
     }
   });
 
-  // ── Step 7: GET /api/users ──
+  // ── Step 7: login as new user with default password, then change it ──
+  let userCookie = null;
+  await step("login as new user (changeit) + change password", async () => {
+    if (!testUserId) {
+      assert("skip — no test user", true);
+      return;
+    }
+    const loginRes = await api.post("/api/auth/login", {
+      email: testEmail,
+      password: "changeit",
+    });
+    assert("login returns 200", loginRes.status === 200, `got ${loginRes.status}`);
+    assert("login flags mustChangePassword=true", loginRes.data?.user?.mustChangePassword === true);
+    const cookies = loginRes.headers["set-cookie"] || [];
+    const token = cookies.find(c => c.startsWith("token="));
+    assert("sets token cookie", !!token);
+    if (token) userCookie = token.split(";")[0];
+
+    if (userCookie) {
+      const meRes = await api.get("/api/auth/me", { headers: { Cookie: userCookie } });
+      assert("GET /me returns 200 (not blocked)", meRes.status === 200, `got ${meRes.status}`);
+      assert("GET /me shows mustChangePassword=true", meRes.data.mustChangePassword === true);
+
+      const changeRes = await api.patch(
+        "/api/auth/me/password",
+        { currentPassword: "changeit", newPassword: "brandnew123" },
+        { headers: { Cookie: userCookie } },
+      );
+      assert("PATCH password returns 200", changeRes.status === 200, `got ${changeRes.status}`);
+
+      const meAfter = await api.get("/api/auth/me", { headers: { Cookie: userCookie } });
+      assert("GET /me after change clears flag", meAfter.data.mustChangePassword === false, `got ${meAfter.data.mustChangePassword}`);
+    }
+  });
+
+  // ── Step 8: GET /api/users ──
   await step("GET /api/users", async () => {
     const res = await api.get("/api/users");
     assert("returns 200", res.status === 200);
@@ -115,19 +166,19 @@ async function main() {
     }
   });
 
-  // ── Step 8: PUT /api/users (missing id) ──
+  // ── Step 9: PUT /api/users (missing id) ──
   await step("PUT /api/users (missing id)", async () => {
     const res = await api.put("/api/users", { name: "X" });
     assert("returns 400", res.status === 400);
   });
 
-  // ── Step 9: PUT /api/users (not found) ──
+  // ── Step 10: PUT /api/users (not found) ──
   await step("PUT /api/users (not found)", async () => {
     const res = await api.put("/api/users?id=00000000-0000-0000-0000-000000000000", { name: "Nobody" });
     assert("returns 404", res.status === 404);
   });
 
-  // ── Step 10: PUT /api/users (update test user name + restore) ──
+  // ── Step 11: PUT /api/users (update test user name + restore) ──
   await step("PUT /api/users (update name)", async () => {
     if (!testUserId) {
       assert("skip — no test user", true);
@@ -145,19 +196,19 @@ async function main() {
     assert("restore succeeds", restoreRes.status === 200);
   });
 
-  // ── Step 11: DELETE /api/users (missing id) ──
+  // ── Step 12: DELETE /api/users (missing id) ──
   await step("DELETE /api/users (missing id)", async () => {
     const res = await api.delete("/api/users");
     assert("returns 400", res.status === 400);
   });
 
-  // ── Step 12: DELETE /api/users (not found) ──
+  // ── Step 13: DELETE /api/users (not found) ──
   await step("DELETE /api/users (not found)", async () => {
     const res = await api.delete("/api/users?id=00000000-0000-0000-0000-000000000000");
     assert("returns 404", res.status === 404);
   });
 
-  // ── Step 13: DELETE /api/users (delete test user) ──
+  // ── Step 14: DELETE /api/users (delete test user) ──
   await step("DELETE /api/users (delete test user)", async () => {
     if (!testUserId) {
       assert("skip — no test user", true);
@@ -171,19 +222,24 @@ async function main() {
     testUserId = null;
   });
 
-  // ── Step 14: POST /api/bands (missing name) ──
+  // ── Step 15: POST /api/bands (missing name) ──
   await step("POST /api/bands (missing name)", async () => {
     const res = await api.post("/api/bands", { colour: "#00ff00" });
     assert("returns 400", res.status === 400);
   });
 
-  // ── Step 15: POST /api/bands (missing colour) ──
+  // ── Step 16: POST /api/bands (missing colour) ──
   await step("POST /api/bands (missing colour)", async () => {
-    const res = await api.post("/api/bands", { name: "No Colour" });
-    assert("returns 400", res.status === 400);
+    const res = await api.post("/api/bands", { name: `[TEST] No Colour ${ts}` });
+    assert("returns 201 (colour optional, defaults applied)", res.status === 201, `got ${res.status}`);
+    if (res.status === 201) {
+      assert("default colour applied", res.data.colour === "#4F46E5", `got ${res.data.colour}`);
+      const del = await api.delete(`/api/bands?id=${res.data.id}`);
+      assert("cleanup", del.status === 200);
+    }
   });
 
-  // ── Step 16: POST /api/bands (create second test band) ──
+  // ── Step 17: POST /api/bands (create second test band) ──
   await step("POST /api/bands (create second test band)", async () => {
     const res = await api.post("/api/bands", {
       name: `[TEST] Second Band ${ts}`,
@@ -198,19 +254,19 @@ async function main() {
     }
   });
 
-  // ── Step 17: PUT /api/bands (missing id) ──
+  // ── Step 18: PUT /api/bands (missing id) ──
   await step("PUT /api/bands (missing id)", async () => {
     const res = await api.put("/api/bands", { name: "X", colour: "#fff" });
     assert("returns 400", res.status === 400);
   });
 
-  // ── Step 18: PUT /api/bands (not found) ──
+  // ── Step 19: PUT /api/bands (not found) ──
   await step("PUT /api/bands (not found)", async () => {
-    const res = await api.put("/api/bands?id=00000000-0000-0000-0000-000000000000", { name: "X", colour: "#fff" });
+    const res = await api.put("/api/bands?id=00000000-0000-0000-0000-000000000000", { name: "X", colour: "#ffffff" });
     assert("returns 404", res.status === 404);
   });
 
-  // ── Step 19: PUT /api/bands (update + restore first test band) ──
+  // ── Step 20: PUT /api/bands (update + restore first test band) ──
   await step("PUT /api/bands (update + restore)", async () => {
     if (!testBandId) {
       assert("skip — no test band", true);
@@ -241,19 +297,19 @@ async function main() {
     assert("GET confirms name restored", band && band.name === originalName);
   });
 
-  // ── Step 20: DELETE /api/bands (missing id) ──
+  // ── Step 21: DELETE /api/bands (missing id) ──
   await step("DELETE /api/bands (missing id)", async () => {
     const res = await api.delete("/api/bands");
     assert("returns 400", res.status === 400);
   });
 
-  // ── Step 21: DELETE /api/bands (not found) ──
+  // ── Step 22: DELETE /api/bands (not found) ──
   await step("DELETE /api/bands (not found)", async () => {
     const res = await api.delete("/api/bands?id=00000000-0000-0000-0000-000000000000");
     assert("returns 404", res.status === 404);
   });
 
-  // ── Step 22: DELETE /api/bands (cleanup both test bands) ──
+  // ── Step 23: DELETE /api/bands (cleanup both test bands) ──
   await step("DELETE /api/bands (cleanup test bands)", async () => {
     let deleted = 0;
     for (const id of [testBandId, secondBandId].filter(Boolean)) {
@@ -270,14 +326,14 @@ async function main() {
     secondBandId = null;
   });
 
-  // ── Step 23: GET /api/users (sanity) ──
+  // ── Step 24: GET /api/users (sanity) ──
   await step("GET /api/users (sanity)", async () => {
     const res = await api.get("/api/users");
     assert("returns 200", res.status === 200);
     assert("returns array", Array.isArray(res.data));
   });
 
-  // ── Step 24: GET /api/bands (sanity) ──
+  // ── Step 25: GET /api/bands (sanity) ──
   await step("GET /api/bands (sanity)", async () => {
     const res = await api.get("/api/bands");
     assert("returns 200", res.status === 200);

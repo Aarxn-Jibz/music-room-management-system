@@ -35,10 +35,12 @@ export const changePasswordSchema = z.object({
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+export const DEFAULT_USER_PASSWORD = 'changeit';
+
 export const registerSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(6).optional(),
   bandIds: z.array(z.string()).optional(),
 });
 

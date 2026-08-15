@@ -7,12 +7,10 @@ import { useRouter, usePathname } from "next/navigation";
 import { signIn, signOut, useSession } from "@/lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import Modal from "./ui/Modal";
-import RegistrationModal from "./ui/RegistrationModal";
 
 const NavbarComponent = () => {
   const { data: session } = useSession();
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
-  const [isRegModalOpen, setRegModalOpen] = useState(false);
   const [isMenuOpen, setMenuOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -213,15 +211,7 @@ const NavbarComponent = () => {
             className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm font-mono text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all placeholder-gray-500"
           />
           <div className="flex justify-between items-center">
-            <button
-              onClick={() => {
-                setLoginModalOpen(false);
-                setRegModalOpen(true);
-              }}
-              className="text-sm font-mono text-purple-400 hover:text-purple-300 transition-colors"
-            >
-              Don't have an account? Sign up
-            </button>
+            <span className="text-sm font-mono text-gray-400">Don't have an account? Contact an admin</span>
             <button
               onClick={handleLogin}
               disabled={isLoggingIn}
@@ -232,8 +222,6 @@ const NavbarComponent = () => {
           </div>
         </div>
       </Modal>
-
-      <RegistrationModal isOpen={isRegModalOpen} onClose={() => setRegModalOpen(false)} />
     </>
   );
 };

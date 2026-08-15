@@ -235,12 +235,11 @@ const btnClass = "w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-50
 const UserForm = ({ user, bands, onFinished }: { user?: DbUser, bands: Band[], onFinished: () => void }) => {
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
-  const [password, setPassword] = useState("");
   const [selectedBandIds, setSelectedBandIds] = useState<string[]>(user?.bands.map(b => b.id) || []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { name, email, password: user ? undefined : password, bandIds: selectedBandIds, role: 'user' };
+    const payload = { name, email, bandIds: selectedBandIds };
     const url = user ? `/api/users?id=${user.id}` : '/api/auth/register';
     const method = user ? 'PUT' : 'POST';
 
@@ -264,10 +263,9 @@ const UserForm = ({ user, bands, onFinished }: { user?: DbUser, bands: Band[], o
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className={inputClass} />
       </div>
       {!user && (
-        <div className="space-y-2">
-          <label className={labelClass}>Password</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className={inputClass} />
-        </div>
+        <p className="text-xs text-gray-500 font-mono">
+          Temporary password: <span className="text-gray-300">changeit</span> — user will be forced to change it on first login.
+        </p>
       )}
       <div className="space-y-2">
         <label className={labelClass}>Profiles</label>
