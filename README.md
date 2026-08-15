@@ -1,54 +1,36 @@
 # Music Room Management System
 
-A full-stack web application for managing music room bookings, slot requests, and equipment tracking at SWO Kengeri Campus. Built with Next.js 15, Drizzle ORM, PostgreSQL (Supabase), and Playwright.
+A full-stack web application for managing music room bookings, slot requests, and equipment tracking at SWO Kengeri Campus. Built with Next.js 15, a Hono API on Cloudflare Workers (D1), and Playwright.
 
 ## Tech Stack
 
 - **Framework:** Next.js 15 (App Router)
 - **Language:** TypeScript
-- **Database:** PostgreSQL (Supabase) via Drizzle ORM
-- **Auth:** NextAuth.js v4 (Credentials provider, JWT)
+- **Backend API:** Hono on Cloudflare Workers
+- **Database:** Cloudflare D1 (SQLite) via Drizzle ORM
+- **Auth:** JWT (jose) session tokens
 - **Styling:** Tailwind CSS 3 + glassmorphism design
 - **Animation:** Framer Motion
-- **Testing:** Playwright (202 API tests, 38 UI tests)
-- **Deployment:** Vercel
+- **Testing:** Playwright (API tests, UI tests)
+- **Deployment:** Vercel (frontend) + Cloudflare Workers (backend)
 
 ## Prerequisites
 
 - Node.js 20+
-- PostgreSQL database (Supabase recommended)
 - npm
-
-## Environment Variables
-
-Create `.env.local` in the project root:
-
-```env
-DATABASE_URL=postgresql://user:password@host:6543/postgres?pgbouncer=true
-NEXTAUTH_SECRET=your-secret-key
-NEXTAUTH_URL=http://localhost:3000
-```
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string (use Supabase pooler port 6543 with `?pgbouncer=true`) |
-| `NEXTAUTH_SECRET` | Encryption key for NextAuth JWT (run `openssl rand -base64 32` to generate) |
-| `NEXTAUTH_URL` | Application URL (`http://localhost:3000` for dev, Vercel domain for production) |
+- Wrangler CLI for local backend dev
 
 ## Getting Started
 
 ```bash
-# Clone the repo
-git clone https://github.com/notpest/music-room-management-system.git
-cd music-room-management-system
-
 # Install dependencies
 npm install --legacy-peer-deps
+cd backend && npm install
 
-# Run database migrations
-npx drizzle-kit migrate
+# Start the backend (Cloudflare Workers local)
+cd backend && npm run dev
 
-# Start the dev server
+# Start the frontend dev server
 npm run dev
 ```
 
@@ -72,9 +54,6 @@ Open [http://localhost:3000](http://localhost:3000) — you'll be redirected to 
 | `npm run test:api` | Run roombooking API tests (no dev server needed) |
 | `npm run test:ui` | Run all Playwright UI tests (dev server must be running) |
 | `npm run test:ui:headed` | Run Playwright UI tests with visible browser |
-| `npm run db:generate` | Generate a new Drizzle migration |
-| `npm run db:migrate` | Apply pending Drizzle migrations |
-| `npm run db:studio` | Open Drizzle Studio (GUI DB browser) |
 
 ## Testing
 
@@ -126,26 +105,13 @@ npx playwright test --project=responsive    # Mobile/tablet viewports (9 tests)
 
 ```
 ├── app/
-│   ├── (auth)/SignIn/        # Sign-in page with glassmorphism form
 │   ├── (root)/
 │   │   ├── Dashboard/        # Slot configuration dashboard
-│   │   ├── EntryLog/         # Equipment entry logs
-│   │   ├── EquipmentBooking/ # Equipment booking pages
 │   │   ├── Register/         # User and band management (admin)
 │   │   ├── RoomBooking/      # Room booking timetable (public)
 │   │   ├── SlotRequests/     # Slot request management (admin)
 │   │   ├── home/             # Landing page (Hero, Mission, Branches, Events)
 │   │   └── page.tsx          # Redirects to /RoomBooking
-│   ├── api/                  # REST API routes
-│   │   ├── auth/             # NextAuth + registration
-│   │   ├── bands/            # Band CRUD
-│   │   ├── entrylogs/        # Entry log queries
-│   │   ├── equipment/        # Equipment management
-│   │   ├── requests/         # Slot request CRUD (with atomic transaction locking)
-│   │   ├── rooms/            # Room listing
-│   │   ├── slotconfig/       # Slot configuration CRUD
-│   │   ├── slots/            # Slot querying
-│   │   └── users/            # User CRUD
 │   └── globals.css           # Tailwind + glassmorphism utilities
 ├── components/
 │   ├── Navbar.tsx            # Navigation with auth modals
@@ -162,8 +128,6 @@ npx playwright test --project=responsive    # Mobile/tablet viewports (9 tests)
 │   │   ├── ProfileDropdown.tsx # User profile popover with colour dots
 │   │   ├── RoomDropdown.tsx  # Room selector dropdown
 │   │   ├── FilterDropdown.tsx # Filter dropdown component
-│   │   ├── EntryLogTable.tsx # Entry log table with glassmorphism
-│   │   ├── TableEquip.tsx    # Equipment table
 │   │   ├── MotionWrapper.tsx # Framer Motion animation wrapper
 │   │   ├── RegistrationModal.tsx
 │   │   ├── MagicButton.tsx
@@ -172,25 +136,15 @@ npx playwright test --project=responsive    # Mobile/tablet viewports (9 tests)
 │   │   ├── focus-cards.tsx
 │   │   └── text-generate-effect.tsx
 │   └── ...
-├── db/
-│   ├── index.ts              # DB connection (global singleton Pool for serverless)
-│   ├── schema/               # Drizzle schema (12 tables)
-│   │   ├── index.ts          # Schema barrel export
-│   │   ├── relations.ts      # Table relations
-│   │   ├── user.ts, band.ts, userBand.ts
-│   │   ├── room.ts, slot.ts, slotConfig.ts
-│   │   ├── request.ts, equipment.ts, entryLog.ts
-│   │   └── loginHistory.ts
-│   └── migrations/           # SQL migration files
+├── backend/                  # Hono API (Cloudflare Workers + D1)
 ├── tests/                    # Test suites
-│   ├── *-api.test.mjs        # API tests (202 total)
-│   ├── *-ui.spec.ts          # Playwright UI tests (38 total)
+│   ├── *-api.test.mjs        # API tests
+│   ├── *-ui.spec.ts          # Playwright UI tests
 │   ├── responsive-ui.spec.ts # Mobile/tablet viewport tests
 │   └── auth.setup.ts         # Playwright auth fixture for admin-only pages
-├── middleware.ts              # Route protection (public: /, /RoomBooking, /home, /SignIn, /api)
+├── middleware.ts              # Route protection (public: /, /RoomBooking, /home, /api)
 ├── playwright.config.ts       # Playwright config (6 projects)
-├── vercel.json                # Vercel deployment config
-└── drizzle.config.ts          # Drizzle Kit config
+└── vercel.json                # Vercel deployment config
 ```
 
 ## Pages
@@ -201,7 +155,6 @@ npx playwright test --project=responsive    # Mobile/tablet viewports (9 tests)
 | `/` | Redirects to `/RoomBooking` |
 | `/RoomBooking` | Weekly room booking timetable with room selector, week navigation, and booking modal |
 | `/home` | Landing page (Hero, Mission, Branches, Events) |
-| `/SignIn` | Login form |
 
 ### Admin (Auth Required)
 | Route | Description |
@@ -209,32 +162,29 @@ npx playwright test --project=responsive    # Mobile/tablet viewports (9 tests)
 | `/SlotRequests` | Approve/deny slot requests with filters (status, date, room, search) |
 | `/Dashboard` | Slot configuration CRUD with time pickers and enable/disable toggles |
 | `/Register` | User management + band management with ColorPicker and BandMultiSelect |
-| `/EntryLog` | Equipment entry log viewer |
-| `/EquipmentBooking` | Equipment management tables |
 
 ## API Endpoints
 
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
 | `/api/auth/register` | POST | Register a new user |
-| `/api/auth/[...nextauth]` | * | NextAuth authentication |
+| `/api/auth/login` | POST | Log in and issue a JWT session |
 | `/api/bands` | GET, POST | List and create bands |
 | `/api/bands/[id]` | PUT, DELETE | Update and delete bands |
-| `/api/entrylogs` | GET | Query entry logs |
-| `/api/equipment` | GET, POST | List and create equipment |
-| `/api/equipment/[id]` | PUT, DELETE | Update and delete equipment |
+| `/api/entrylogs` | POST | Record an equipment entry scan |
 | `/api/requests` | GET, POST | List and create slot requests (atomic transactions) |
 | `/api/requests/[id]` | PUT, DELETE | Update and delete slot requests |
 | `/api/rooms` | GET | List rooms |
 | `/api/slotconfig` | GET, POST | List and create slot configs |
 | `/api/slotconfig/[id]` | PUT, DELETE | Update and delete slot configs |
 | `/api/slots` | GET | Query slots by date range and room |
+| `/api/system-settings` | GET, PUT | Read and update system settings (admin) |
 | `/api/users` | GET, POST | List and create users |
 | `/api/users/[id]` | PUT, DELETE | Update and delete users |
 
 # Race Condition Protection
 
-Booking requests use `SELECT ... FOR UPDATE` within database transactions to prevent double-booking under concurrent requests. The room row is locked before the overlap check + insert, ensuring atomicity in serverless environments.
+Booking requests run an active-conflict overlap check before insert and rely on the `bookings_room_start_unique` unique index (`room_id`, `start_time`) to prevent double-booking under concurrent requests.
 
 ## Design System
 
@@ -252,9 +202,8 @@ Booking requests use `SELECT ... FOR UPDATE` within database transactions to pre
 
 1. Push to GitHub and import the repo into Vercel
 2. Set environment variables in Vercel dashboard:
-   - `DATABASE_URL` — Supabase connection string (pooler port 6543 with `?pgbouncer=true`)
-   - `NEXTAUTH_SECRET` — Random base64 string
-   - `NEXTAUTH_URL` — Your Vercel domain (e.g., `https://music-room-management-system.vercel.app`)
+   - `BACKEND_URL` — deployed Hono/Cloudflare Workers URL (default `http://localhost:8787`)
+   - `JWT_SECRET` — random secret used to sign session JWTs
 3. Deploy — Vercel detects Next.js automatically
 4. Vercel runs `npm install --legacy-peer-deps` followed by the build
 
@@ -268,20 +217,6 @@ npx vercel deploy --prebuilt    # Deploy preview
 npx vercel deploy --prod        # Deploy production
 ```
 
-### Database Migrations on Deploy
-
-Migrations run automatically via the `postinstall` script (`npx drizzle-kit migrate`). If the database is unreachable during build (e.g., Supabase IP restrictions), the migration script gracefully fails with `|| echo` and you can run it manually:
-
-```bash
-npx drizzle-kit migrate
-```
-
-To generate a new migration after schema changes:
-
-```bash
-npm run db:generate   # npx drizzle-kit generate
-```
-
 ## Key Design Decisions
 
 - **`overflow-y: hidden` before mount → `overflow-y: auto` after mount** — prevents scrollbar flicker
@@ -291,5 +226,4 @@ npm run db:generate   # npx drizzle-kit generate
 - **Scroll-edge gradient** — visual hint when table content is scrollable horizontally
 - **Pagination ellipsis** — shows first, last, and ±1 from current page with "..." for gaps
 - **Week cache** — `useRef<Map>` with max 20 entries, cache-first, cleared on booking
-- **Global singleton Pool** — `pg.Pool` stored on `globalThis` for Vercel serverless hot module reuse
-- **Middleware protection** — `getToken` from next-auth/jwt guards admin routes; `/`, `/RoomBooking`, `/home`, `/SignIn`, `/api/*` are public
+- **Middleware protection** — `jose` JWT verification guards non-public routes; `/`, `/RoomBooking`, `/home`, `/api/*` are public
